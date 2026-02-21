@@ -222,6 +222,35 @@ Bundles all three stage configs into one struct:
 - **No error return**: All operations are in-memory and infallible
 - **Deterministic**: Same inputs produce same outputs
 
+## Environment Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OLLAMA_MODEL` | `qwen2.5-coder:7b` | Generation model for `/api/generate` |
+| `EMBED_MODEL` | `qwen2.5-coder:7b` | Embedding model for `/api/embed` (separate from gen model) |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
+| `GRPC_PORT` | `50051` | Python gRPC server listen port |
+| `CODEC_ADDR` | `localhost:50051` | Go controller gRPC target |
+| `MEMORY_PERSIST_DIR` | `./chroma_data` | ChromaDB persistence directory |
+
+### Model Compatibility
+
+Not all Ollama models support `/api/embed`. The `EMBED_MODEL` env var allows using a separate model for embeddings when the generation model lacks embed support.
+
+| Model | Generate | Embed | Thinking tokens | Notes |
+|---|---|---|---|---|
+| `qwen2.5-coder:7b` | Yes | Yes | No | Default for both gen + embed |
+| `qwen3:4b` | Yes | No (501) | Yes | Inflates `eval_count` with reasoning tokens |
+| `deepseek-r1:1.5b` | Yes | Yes | Yes | Fast, but emits `<think>` blocks in response |
+
+### Thinking Model Support
+
+The entropy estimator strips `<think>...</think>` blocks from responses before counting visible tokens. This prevents internal reasoning tokens from inflating entropy and triggering false risk flags in the gate.
+
+### Event Loop Architecture
+
+`CodecServiceServicer` runs a dedicated asyncio event loop in a daemon thread. gRPC thread pool workers schedule coroutines via `asyncio.run_coroutine_threadsafe()`, avoiding "event loop already running" errors from concurrent RPCs.
+
 ## Communication
 
 - Go ↔ Python: gRPC on port 50051 (configurable via `CODEC_ADDR` / `GRPC_PORT`)
