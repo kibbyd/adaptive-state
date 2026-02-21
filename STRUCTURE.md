@@ -21,6 +21,14 @@ C:\adaptive_state\
 │   │   ├── logging/
 │   │   │   ├── types.go                  # ProvenanceEntry
 │   │   │   └── provenance.go             # LogDecision → provenance_log table
+│   │   ├── gate/
+│   │   │   ├── types.go                  # VetoType, VetoSignal, GateConfig, GateDecision
+│   │   │   ├── gate.go                   # Gate: hard veto + soft scoring
+│   │   │   └── gate_test.go
+│   │   ├── eval/
+│   │   │   ├── types.go                  # EvalConfig, EvalMetric, EvalResult
+│   │   │   ├── eval.go                   # EvalHarness: post-commit validation
+│   │   │   └── eval_test.go
 │   │   ├── replay/
 │   │   │   └── harness.go                # Replay scaffold (iterates interactions)
 │   │   ├── retrieval/
@@ -86,6 +94,41 @@ Triple-gated evidence retrieval orchestrated from Go:
 Evidence flow: Go calls Generate (get entropy) → Retriever.Retrieve() → re-Generate with evidence → StoreEvidence.
 
 ChromaDB persistence: configurable via `MEMORY_PERSIST_DIR` (default: `./chroma_data`).
+
+## Gate + Rollback (Phase 3)
+
+Hierarchical gate with hard vetoes decides whether to commit or reject state updates.
+
+### Hard Veto Signals (reject immediately)
+| Signal | Source |
+|---|---|
+| User correction | `Signals.UserCorrection` |
+| Tool/verifier failure | `Signals.ToolFailure` |
+| Constraint violation | `Signals.ConstraintViolation` |
+| Safety/policy violation | `Signals.RiskFlag` |
+| Delta norm exceeded | Computed from old vs proposed state |
+| Risk segment norm exceeded | Computed from proposed state risk segment |
+
+### Soft Signals (logged, do not block)
+- Entropy drop (lower entropy = better)
+- Delta stability (smaller delta norm = more stable)
+- Segment focus (fewer segments hit = more focused)
+
+### Tentative Commit Workflow
+1. Update() produces proposed state (no-op delta in Phase 3)
+2. Gate.Evaluate() checks hard vetoes + scores soft signals
+3. If rejected → log, keep old state
+4. If passed → tentative commit via CommitState()
+5. EvalHarness.Run() validates committed state (norm bounds, segment norms)
+6. If eval fails → Rollback() to previous version
+7. If eval passes → state stays committed
+
+### Eval Checks (single-response, no Generate calls)
+| Check | Blocking | Threshold |
+|---|---|---|
+| State L2 norm | Yes | MaxStateNorm (default 50.0) |
+| Per-segment L2 norm | Yes | MaxSegmentNorm (default 15.0) |
+| Entropy vs baseline | No (informational) | EntropyBaseline (default 2.0) |
 
 ## Communication
 

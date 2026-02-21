@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/codec"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/eval"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/retrieval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
@@ -49,6 +51,10 @@ func main() {
 	// Initialize retriever with triple-gated config
 	retriever := retrieval.NewRetriever(codecClient, retrieval.DefaultConfig())
 
+	// Phase 3: Initialize gate and eval harness
+	stateGate := gate.NewGate(gate.DefaultGateConfig())
+	evalHarness := eval.NewEvalHarness(eval.DefaultEvalConfig())
+
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
 	fmt.Println("Type a prompt (or 'quit' to exit):")
@@ -72,14 +78,14 @@ func main() {
 		turnNum++
 		turnID := fmt.Sprintf("turn-%d", turnNum)
 
-		// Get current state
+		// Step 1: Get current state
 		current, err := store.GetCurrent()
 		if err != nil {
 			log.Printf("error getting current state: %v", err)
 			continue
 		}
 
-		// Step 1: First-pass Generate to get entropy
+		// Step 2: First-pass Generate to get entropy
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil)
 		cancel()
@@ -88,7 +94,7 @@ func main() {
 			continue
 		}
 
-		// Step 2: Triple-gated retrieval (if entropy warrants it)
+		// Step 3: Triple-gated retrieval (if entropy warrants it)
 		var evidenceStrings []string
 		var evidenceRefs []string
 		ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
@@ -103,7 +109,7 @@ func main() {
 			}
 			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 
-			// Step 3: Re-generate with evidence injected
+			// Re-generate with evidence injected
 			ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
 			result, err = codecClient.Generate(ctx3, prompt, current.StateVector, evidenceStrings)
 			cancel3()
@@ -127,39 +133,90 @@ func main() {
 			log.Printf("store evidence error (non-fatal): %v", storeErr)
 		}
 
-		// Step 5: Run update function
+		// Step 5: Run update function (produces proposed state + metrics)
 		updateCtx := update.UpdateContext{
 			TurnID:       turnID,
 			Prompt:       prompt,
 			ResponseText: result.Text,
 			Entropy:      result.Entropy,
 		}
-		updateResult := update.Update(current, updateCtx, update.Signals{}, evidenceStrings)
+		signals := update.Signals{} // Phase 3: signals populated by future phases
+		updateResult := update.Update(current, updateCtx, signals, evidenceStrings)
 
-		// Commit new state version
-		if err := store.CommitState(updateResult.NewState); err != nil {
-			log.Printf("commit error: %v", err)
+		// Step 6: Gate evaluation — hard vetoes + soft scoring
+		gateDecision := stateGate.Evaluate(
+			current, updateResult.NewState, signals, updateResult.Metrics, result.Entropy,
+		)
+
+		if gateDecision.Action == "reject" {
+			// Gate rejected: log rejection, keep old state, continue
+			log.Printf("[%s] gate rejected: %s", turnID, gateDecision.Reason)
+			signalsJSON, _ := json.Marshal(updateCtx)
+			_ = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
+				VersionID:    current.VersionID,
+				TriggerType:  "user_turn",
+				SignalsJSON:  string(signalsJSON),
+				EvidenceRefs: strings.Join(evidenceRefs, ","),
+				Decision:     "reject",
+				Reason:       fmt.Sprintf("gate: %s", gateDecision.Reason),
+				CreatedAt:    time.Now().UTC(),
+			})
+			fmt.Printf("[%s] decision=reject (gate) entropy=%.4f evidence=%d\n",
+				turnID, result.Entropy, len(evidenceStrings))
+			continue
 		}
 
-		// Log provenance (with evidence_refs)
+		// Step 7: Tentative commit
+		if err := store.CommitState(updateResult.NewState); err != nil {
+			log.Printf("commit error: %v", err)
+			continue
+		}
+
+		// Step 8: Post-commit eval
+		evalResult := evalHarness.Run(updateResult.NewState, result.Entropy)
+
+		if !evalResult.Passed {
+			// Eval failed: rollback to previous version
+			log.Printf("[%s] eval failed: %s — rolling back", turnID, evalResult.Reason)
+			if rbErr := store.Rollback(current.VersionID); rbErr != nil {
+				log.Printf("[%s] rollback error: %v", turnID, rbErr)
+			}
+			signalsJSON, _ := json.Marshal(updateCtx)
+			_ = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
+				VersionID:    updateResult.NewState.VersionID,
+				TriggerType:  "user_turn",
+				SignalsJSON:  string(signalsJSON),
+				EvidenceRefs: strings.Join(evidenceRefs, ","),
+				Decision:     "reject",
+				Reason:       fmt.Sprintf("eval rollback: %s", evalResult.Reason),
+				CreatedAt:    time.Now().UTC(),
+			})
+			fmt.Printf("[%s] decision=rollback (eval) entropy=%.4f evidence=%d\n",
+				turnID, result.Entropy, len(evidenceStrings))
+			continue
+		}
+
+		// Step 9: Eval passed — state stays committed. Log provenance.
 		signalsJSON, _ := json.Marshal(updateCtx)
+		reason := fmt.Sprintf("gate: %s | eval: %s", gateDecision.Reason, evalResult.Reason)
 		err = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
 			VersionID:    updateResult.NewState.VersionID,
 			TriggerType:  "user_turn",
 			SignalsJSON:  string(signalsJSON),
 			EvidenceRefs: strings.Join(evidenceRefs, ","),
-			Decision:     updateResult.Decision.Action,
-			Reason:       updateResult.Decision.Reason,
+			Decision:     "commit",
+			Reason:       reason,
 			CreatedAt:    time.Now().UTC(),
 		})
 		if err != nil {
 			log.Printf("logging error: %v", err)
 		}
 
-		fmt.Printf("[%s] decision=%s entropy=%.4f evidence=%d\n",
-			turnID, updateResult.Decision.Action, result.Entropy, len(evidenceStrings))
+		fmt.Printf("[%s] decision=commit gate_score=%.4f entropy=%.4f evidence=%d\n",
+			turnID, gateDecision.SoftScore, result.Entropy, len(evidenceStrings))
 	}
 }
+
 // #endregion main
 
 // #region helpers
@@ -169,4 +226,5 @@ func envOr(key, fallback string) string {
 	}
 	return fallback
 }
+
 // #endregion helpers

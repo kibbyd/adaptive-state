@@ -15,10 +15,13 @@ type UpdateContext struct {
 // #region signals
 // Signals carries derived signals that inform disposition updates.
 type Signals struct {
-	SentimentScore float32
-	NoveltyScore   float32
-	CoherenceScore float32
-	RiskFlag       bool
+	SentimentScore      float32
+	NoveltyScore        float32
+	CoherenceScore      float32
+	RiskFlag            bool
+	UserCorrection      bool // Phase 3: user explicitly corrected prior response
+	ToolFailure         bool // Phase 3: tool/verifier reported failure
+	ConstraintViolation bool // Phase 3: detected contradiction with constraints
 }
 // #endregion signals
 
