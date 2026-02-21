@@ -3,7 +3,8 @@ package retrieval
 // #region config
 // RetrievalConfig holds thresholds and limits for the 3-gate retrieval pipeline.
 type RetrievalConfig struct {
-	EntropyThreshold    float32 // Gate 1: min entropy to trigger retrieval
+	AlwaysRetrieve      bool    // Skip Gate 1 entropy check, always attempt retrieval
+	EntropyThreshold    float32 // Gate 1: min entropy to trigger retrieval (ignored if AlwaysRetrieve)
 	SimilarityThreshold float32 // Gate 2: min cosine similarity
 	TopK                int     // Max results from vector search
 	MaxEvidenceLen      int     // Max chars per evidence string
@@ -12,6 +13,7 @@ type RetrievalConfig struct {
 // DefaultConfig returns sensible defaults for retrieval gating.
 func DefaultConfig() RetrievalConfig {
 	return RetrievalConfig{
+		AlwaysRetrieve:      true,
 		EntropyThreshold:    0.5,
 		SimilarityThreshold: 0.3,
 		TopK:                5,

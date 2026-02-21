@@ -29,8 +29,8 @@ func NewRetriever(codec *codec.CodecClient, config RetrievalConfig) *Retriever {
 func (r *Retriever) Retrieve(ctx context.Context, prompt string, entropy float32) (GateResult, error) {
 	result := GateResult{}
 
-	// Gate 1: entropy check
-	if entropy < r.config.EntropyThreshold {
+	// Gate 1: entropy check (skipped when AlwaysRetrieve is set)
+	if !r.config.AlwaysRetrieve && entropy < r.config.EntropyThreshold {
 		result.Gate1Passed = false
 		result.Reason = fmt.Sprintf("gate1: entropy %.4f < threshold %.4f", entropy, r.config.EntropyThreshold)
 		return result, nil

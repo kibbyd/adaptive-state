@@ -141,6 +141,9 @@ func TestConsistencyCheck_AllFiltered(t *testing.T) {
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
+	if !cfg.AlwaysRetrieve {
+		t.Error("expected AlwaysRetrieve to be true by default")
+	}
 	if cfg.EntropyThreshold <= 0 {
 		t.Error("expected positive entropy threshold")
 	}
@@ -170,6 +173,7 @@ func TestRetrieve_Gate1Fail(t *testing.T) {
 	mock := &mockCodecService{}
 	cc := codec.NewCodecClientWithService(mock)
 	cfg := DefaultConfig()
+	cfg.AlwaysRetrieve = false
 	cfg.EntropyThreshold = 2.0
 	r := NewRetriever(cc, cfg)
 
@@ -182,6 +186,31 @@ func TestRetrieve_Gate1Fail(t *testing.T) {
 	}
 	if result.Gate2Count != 0 {
 		t.Error("expected no gate2 results when gate1 fails")
+	}
+}
+
+func TestRetrieve_AlwaysRetrieveBypassesGate1(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{
+			Results: []*pb.SearchResult{
+				{Id: "a", Text: "recalled evidence", Score: 0.9},
+			},
+		},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig() // AlwaysRetrieve=true by default
+	cfg.EntropyThreshold = 2.0 // would block if checked
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "what did we talk about", 0.1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Gate1Passed {
+		t.Error("expected gate1 to pass when AlwaysRetrieve is true")
+	}
+	if result.Gate3Count != 1 {
+		t.Errorf("expected 1 retrieved result, got %d", result.Gate3Count)
 	}
 }
 
