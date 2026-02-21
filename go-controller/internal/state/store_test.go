@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -525,6 +526,252 @@ func TestNewStore_CorruptDB(t *testing.T) {
 	}
 	// Best-effort cleanup; may fail on Windows due to leaked DB handle
 	os.RemoveAll(dir)
+}
+
+// seedProvenance inserts a provenance_log row for a given version.
+func seedProvenance(t *testing.T, db *sql.DB, versionID, decision, reason, signalsJSON string) {
+	t.Helper()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := db.Exec(
+		`INSERT INTO provenance_log (version_id, trigger_type, signals_json, decision, reason, created_at)
+		 VALUES (?, 'user_turn', ?, ?, ?, ?)`,
+		versionID, nullableStr(signalsJSON), decision, nullableStr(reason), now,
+	)
+	if err != nil {
+		t.Fatalf("seed provenance: %v", err)
+	}
+}
+
+func nullableStr(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func TestListVersionsWithProvenance(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	v1, err := s.CreateInitialState(seg)
+	if err != nil {
+		t.Fatalf("CreateInitialState: %v", err)
+	}
+
+	v2 := StateRecord{
+		VersionID:   "v2-prov",
+		ParentID:    v1.VersionID,
+		StateVector: v1.StateVector,
+		SegmentMap:  seg,
+		CreatedAt:   v1.CreatedAt.Add(time.Second),
+	}
+	v2.StateVector[0] = 0.5
+	if err := s.CommitState(v2); err != nil {
+		t.Fatalf("CommitState: %v", err)
+	}
+
+	// Insert provenance for v2 only
+	signalsJSON := `{"turn_id":"t1","prompt":"hi","response":"hello","entropy":0.3,"delta_norm":0.002,"signals":{},"thresholds":{},"gate_action":"commit","gate_soft_score":0.8,"gate_vetoed":false,"gate_reason":"ok"}`
+	seedProvenance(t, s.DB(), "v2-prov", "commit", "gate passed", signalsJSON)
+
+	results, err := s.ListVersionsWithProvenance(10)
+	if err != nil {
+		t.Fatalf("ListVersionsWithProvenance: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+
+	// Results are DESC by created_at, so v2-prov is first
+	if results[0].VersionID != "v2-prov" {
+		t.Fatalf("expected v2-prov first, got %s", results[0].VersionID)
+	}
+	if results[0].Decision != "commit" {
+		t.Errorf("expected decision 'commit', got %q", results[0].Decision)
+	}
+	if results[0].Reason != "gate passed" {
+		t.Errorf("expected reason 'gate passed', got %q", results[0].Reason)
+	}
+	if results[0].SignalsJSON == "" {
+		t.Error("expected non-empty SignalsJSON")
+	}
+	if results[0].StateVector[0] != 0.5 {
+		t.Errorf("expected StateVector[0]=0.5, got %f", results[0].StateVector[0])
+	}
+}
+
+func TestListVersionsWithProvenance_NoProvenance(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	_, err := s.CreateInitialState(seg)
+	if err != nil {
+		t.Fatalf("CreateInitialState: %v", err)
+	}
+
+	results, err := s.ListVersionsWithProvenance(10)
+	if err != nil {
+		t.Fatalf("ListVersionsWithProvenance: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	// LEFT JOIN: no provenance row → empty fields
+	if results[0].Decision != "" {
+		t.Errorf("expected empty decision, got %q", results[0].Decision)
+	}
+	if results[0].Reason != "" {
+		t.Errorf("expected empty reason, got %q", results[0].Reason)
+	}
+	if results[0].SignalsJSON != "" {
+		t.Errorf("expected empty signals JSON, got %q", results[0].SignalsJSON)
+	}
+}
+
+func TestListVersionsWithProvenance_Limit(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	v1, _ := s.CreateInitialState(seg)
+	for i := 0; i < 5; i++ {
+		v := StateRecord{
+			VersionID:   fmt.Sprintf("v%d", i+2),
+			ParentID:    v1.VersionID,
+			StateVector: v1.StateVector,
+			SegmentMap:  seg,
+			CreatedAt:   v1.CreatedAt.Add(time.Duration(i+1) * time.Second),
+		}
+		s.CommitState(v)
+	}
+
+	results, err := s.ListVersionsWithProvenance(3)
+	if err != nil {
+		t.Fatalf("ListVersionsWithProvenance: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results (limit), got %d", len(results))
+	}
+}
+
+func TestListVersionsWithProvenance_ClosedDB(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewStore(filepath.Join(dir, "test.db"))
+	s.CreateInitialState(DefaultSegmentMap())
+	s.Close()
+
+	_, err := s.ListVersionsWithProvenance(10)
+	if err == nil {
+		t.Fatal("expected error on closed DB")
+	}
+}
+
+func TestListVersionsWithProvenance_BadSegmentJSON(t *testing.T) {
+	s, db := corruptDB(t)
+	vec := make([]byte, 128*4)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	db.Exec(
+		`INSERT INTO state_versions (version_id, parent_id, state_vector, segment_map, created_at)
+		 VALUES (?, NULL, ?, ?, ?)`, "bad-seg", vec, "%%%not-json", now,
+	)
+
+	_, err := s.ListVersionsWithProvenance(10)
+	if err == nil {
+		t.Fatal("expected unmarshal error for bad segment JSON")
+	}
+}
+
+func TestGetVersionWithProvenance(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	v1, err := s.CreateInitialState(seg)
+	if err != nil {
+		t.Fatalf("CreateInitialState: %v", err)
+	}
+
+	v2 := StateRecord{
+		VersionID:   "v2-detail",
+		ParentID:    v1.VersionID,
+		StateVector: v1.StateVector,
+		SegmentMap:  seg,
+		CreatedAt:   v1.CreatedAt.Add(time.Second),
+		MetricsJSON: `{"test":true}`,
+	}
+	v2.StateVector[10] = 1.0
+	if err := s.CommitState(v2); err != nil {
+		t.Fatalf("CommitState: %v", err)
+	}
+
+	seedProvenance(t, s.DB(), "v2-detail", "reject", "eval rollback: norm exceeded", "")
+
+	vp, err := s.GetVersionWithProvenance("v2-detail")
+	if err != nil {
+		t.Fatalf("GetVersionWithProvenance: %v", err)
+	}
+
+	if vp.VersionID != "v2-detail" {
+		t.Errorf("expected v2-detail, got %s", vp.VersionID)
+	}
+	if vp.ParentID != v1.VersionID {
+		t.Errorf("expected parent %s, got %s", v1.VersionID, vp.ParentID)
+	}
+	if vp.Decision != "reject" {
+		t.Errorf("expected decision 'reject', got %q", vp.Decision)
+	}
+	if vp.Reason != "eval rollback: norm exceeded" {
+		t.Errorf("expected reason with eval rollback, got %q", vp.Reason)
+	}
+	if vp.StateVector[10] != 1.0 {
+		t.Errorf("expected StateVector[10]=1.0, got %f", vp.StateVector[10])
+	}
+	if vp.MetricsJSON != `{"test":true}` {
+		t.Errorf("expected metrics JSON round-trip, got %q", vp.MetricsJSON)
+	}
+}
+
+func TestGetVersionWithProvenance_NoProvenance(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	v1, _ := s.CreateInitialState(seg)
+
+	vp, err := s.GetVersionWithProvenance(v1.VersionID)
+	if err != nil {
+		t.Fatalf("GetVersionWithProvenance: %v", err)
+	}
+
+	if vp.Decision != "" {
+		t.Errorf("expected empty decision, got %q", vp.Decision)
+	}
+	if vp.VersionID != v1.VersionID {
+		t.Errorf("expected %s, got %s", v1.VersionID, vp.VersionID)
+	}
+}
+
+func TestGetVersionWithProvenance_NotFound(t *testing.T) {
+	s := tempDB(t)
+	s.CreateInitialState(DefaultSegmentMap())
+
+	_, err := s.GetVersionWithProvenance("nonexistent-id")
+	if err == nil {
+		t.Fatal("expected error for nonexistent version")
+	}
+}
+
+func TestGetVersionWithProvenance_BadSegmentJSON(t *testing.T) {
+	s, db := corruptDB(t)
+	vec := make([]byte, 128*4)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	db.Exec(
+		`INSERT INTO state_versions (version_id, parent_id, state_vector, segment_map, created_at)
+		 VALUES (?, NULL, ?, ?, ?)`, "bad-seg-detail", vec, "not-json", now,
+	)
+
+	_, err := s.GetVersionWithProvenance("bad-seg-detail")
+	if err == nil {
+		t.Fatal("expected unmarshal error for bad segment JSON")
+	}
 }
 
 func TestNewStore_PragmaFails(t *testing.T) {

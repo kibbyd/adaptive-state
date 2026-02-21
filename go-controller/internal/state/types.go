@@ -47,3 +47,13 @@ type ProvenanceTag struct {
 	CreatedAt    time.Time
 }
 // #endregion provenance-tag
+
+// #region version-with-provenance
+// VersionWithProvenance pairs a state version with its provenance row fields.
+type VersionWithProvenance struct {
+	StateRecord
+	Decision    string
+	Reason      string
+	SignalsJSON string
+}
+// #endregion version-with-provenance

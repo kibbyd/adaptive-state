@@ -298,6 +298,122 @@ func (s *Store) ListVersions(limit int) ([]StateRecord, error) {
 }
 // #endregion list-versions
 
+// #region list-with-provenance
+// ListVersionsWithProvenance returns the most recent state versions joined with provenance data.
+func (s *Store) ListVersionsWithProvenance(limit int) ([]VersionWithProvenance, error) {
+	rows, err := s.db.Query(
+		`SELECT sv.version_id, sv.parent_id, sv.state_vector, sv.segment_map,
+		        sv.created_at, sv.metrics_json,
+		        pl.decision, pl.reason, pl.signals_json
+		 FROM state_versions sv
+		 LEFT JOIN provenance_log pl ON sv.version_id = pl.version_id
+		 ORDER BY sv.created_at DESC
+		 LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list versions with provenance: %w", err)
+	}
+	defer rows.Close()
+
+	var results []VersionWithProvenance
+	for rows.Next() {
+		var vp VersionWithProvenance
+		var parentID sql.NullString
+		var vecBlob []byte
+		var segJSON string
+		var createdStr string
+		var metricsJSON sql.NullString
+		var decision sql.NullString
+		var reason sql.NullString
+		var signalsJSON sql.NullString
+
+		if err := rows.Scan(
+			&vp.VersionID, &parentID, &vecBlob, &segJSON,
+			&createdStr, &metricsJSON,
+			&decision, &reason, &signalsJSON,
+		); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
+		}
+
+		if parentID.Valid {
+			vp.ParentID = parentID.String
+		}
+		vp.StateVector = decodeVector(vecBlob)
+		if err := json.Unmarshal([]byte(segJSON), &vp.SegmentMap); err != nil {
+			return nil, fmt.Errorf("unmarshal segment map: %w", err)
+		}
+		vp.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdStr)
+		if metricsJSON.Valid {
+			vp.MetricsJSON = metricsJSON.String
+		}
+		if decision.Valid {
+			vp.Decision = decision.String
+		}
+		if reason.Valid {
+			vp.Reason = reason.String
+		}
+		if signalsJSON.Valid {
+			vp.SignalsJSON = signalsJSON.String
+		}
+
+		results = append(results, vp)
+	}
+	return results, rows.Err()
+}
+
+// GetVersionWithProvenance retrieves a single version joined with its provenance row.
+func (s *Store) GetVersionWithProvenance(id string) (VersionWithProvenance, error) {
+	var vp VersionWithProvenance
+	var parentID sql.NullString
+	var vecBlob []byte
+	var segJSON string
+	var createdStr string
+	var metricsJSON sql.NullString
+	var decision sql.NullString
+	var reason sql.NullString
+	var signalsJSON sql.NullString
+
+	err := s.db.QueryRow(
+		`SELECT sv.version_id, sv.parent_id, sv.state_vector, sv.segment_map,
+		        sv.created_at, sv.metrics_json,
+		        pl.decision, pl.reason, pl.signals_json
+		 FROM state_versions sv
+		 LEFT JOIN provenance_log pl ON sv.version_id = pl.version_id
+		 WHERE sv.version_id = ?`, id,
+	).Scan(
+		&vp.VersionID, &parentID, &vecBlob, &segJSON,
+		&createdStr, &metricsJSON,
+		&decision, &reason, &signalsJSON,
+	)
+	if err != nil {
+		return VersionWithProvenance{}, fmt.Errorf("get version with provenance %s: %w", id, err)
+	}
+
+	if parentID.Valid {
+		vp.ParentID = parentID.String
+	}
+	vp.StateVector = decodeVector(vecBlob)
+	if err := json.Unmarshal([]byte(segJSON), &vp.SegmentMap); err != nil {
+		return VersionWithProvenance{}, fmt.Errorf("unmarshal segment map: %w", err)
+	}
+	vp.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdStr)
+	if metricsJSON.Valid {
+		vp.MetricsJSON = metricsJSON.String
+	}
+	if decision.Valid {
+		vp.Decision = decision.String
+	}
+	if reason.Valid {
+		vp.Reason = reason.String
+	}
+	if signalsJSON.Valid {
+		vp.SignalsJSON = signalsJSON.String
+	}
+
+	return vp, nil
+}
+// #endregion list-with-provenance
+
 // #region vector-encoding
 func encodeVector(v [128]float32) []byte {
 	buf := make([]byte, 128*4)
