@@ -1,41 +1,41 @@
 """Tests for InferenceService."""
 
-import math
-
 from adaptive_inference.service import InferenceService
 
 
-def test_format_state_preamble_zeros():
-    """State preamble with zero vector should show opaque keys with zero norms."""
+def test_format_state_preamble_base():
+    """Preamble should always include base system instruction."""
     svc = InferenceService()
     preamble = svc._format_state_preamble([0.0] * 128, [])
-    assert "DO NOT interpret" in preamble
-    assert "s0=0.0000" in preamble
-    assert "s1=0.0000" in preamble
-    assert "preferences" not in preamble
+    assert "helpful assistant" in preamble
+    assert "s0" not in preamble
+    assert "norm" not in preamble
 
 
 def test_format_state_preamble_with_evidence():
-    """State preamble should include evidence refs."""
+    """Preamble should include evidence as prior context."""
     svc = InferenceService()
     preamble = svc._format_state_preamble([0.0] * 128, ["doc1", "doc2"])
-    assert "refs: doc1, doc2" in preamble
+    assert "Prior context:" in preamble
+    assert "doc1" in preamble
+    assert "doc2" in preamble
 
 
-def test_format_state_preamble_short_vector():
-    """Short vector should return empty preamble."""
+def test_format_state_preamble_no_evidence():
+    """Preamble without evidence should not include separator."""
     svc = InferenceService()
-    preamble = svc._format_state_preamble([0.0] * 10, [])
-    assert preamble == ""
+    preamble = svc._format_state_preamble([0.0] * 128, [])
+    assert "---" not in preamble
+    assert "Prior context" not in preamble
 
 
-def test_format_state_preamble_norms():
-    """Non-zero segments should produce non-zero norms with opaque keys."""
+def test_format_state_preamble_no_norms_injected():
+    """Non-zero state vector should NOT leak norms into preamble."""
     svc = InferenceService()
-    vec = [0.0] * 128
-    vec[0] = 1.0  # s0 segment
+    vec = [1.0] * 128
     preamble = svc._format_state_preamble(vec, [])
-    assert "s0=1.0000" in preamble
+    assert "1.0" not in preamble
+    assert "norm" not in preamble
 
 
 def test_estimate_entropy_empty_response():

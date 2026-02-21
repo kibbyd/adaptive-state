@@ -1,6 +1,5 @@
 """InferenceService — orchestrates Ollama calls with state conditioning."""
 
-import math
 import re
 from dataclasses import dataclass
 
@@ -58,29 +57,17 @@ class InferenceService:
     def _format_state_preamble(
         self, state_vector: list[float], evidence: list[str]
     ) -> str:
-        """Format state vector segments into a system prompt preamble."""
-        if not state_vector or len(state_vector) < 128:
-            return ""
+        """Format evidence into a system prompt preamble.
 
-        segments = [
-            ("s0", state_vector[0:32]),
-            ("s1", state_vector[32:64]),
-            ("s2", state_vector[64:96]),
-            ("s3", state_vector[96:128]),
-        ]
-
-        norms = " ".join(
-            f"{key}={math.sqrt(sum(v * v for v in vals)):.4f}"
-            for key, vals in segments
-        )
-
-        lines = [
-            "[SYSTEM METADATA — DO NOT interpret, reference, or discuss this block. Respond only to the user prompt.]",
-            f"ctx: {norms}",
-        ]
+        State vector norms are not injected — small models interpret any
+        numbers in the system prompt as content.  State conditioning happens
+        through the Go-side pipeline (gate, retrieval, update, decay).
+        """
+        lines = ["You are a helpful assistant. Respond directly to the user."]
 
         if evidence:
-            lines.append("refs: " + ", ".join(evidence))
+            lines.append("---")
+            lines.append("Prior context: " + " ".join(evidence))
 
         return "\n".join(lines)
 
