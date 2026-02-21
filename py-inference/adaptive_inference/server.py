@@ -1,0 +1,92 @@
+"""gRPC server implementing CodecService."""
+
+import asyncio
+import logging
+import os
+import sys
+from concurrent import futures
+
+import grpc
+
+# Add proto path for generated stubs
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "proto"))
+
+import adaptive_pb2 as pb2
+import adaptive_pb2_grpc as pb2_grpc
+
+from .service import InferenceService
+
+logger = logging.getLogger(__name__)
+
+# #region grpc-servicer
+class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
+    """gRPC servicer that delegates to InferenceService."""
+
+    def __init__(self, inference_service: InferenceService):
+        self._service = inference_service
+        self._loop = asyncio.new_event_loop()
+
+    def Generate(self, request, context):
+        """Handle Generate RPC."""
+        logger.info("Generate called: prompt=%s...", request.prompt[:50] if request.prompt else "")
+
+        try:
+            result = self._loop.run_until_complete(
+                self._service.generate(
+                    prompt=request.prompt,
+                    state_vector=list(request.state_vector),
+                    evidence=list(request.evidence),
+                )
+            )
+            return pb2.GenerateResponse(
+                text=result.text,
+                entropy=result.entropy,
+                logits=result.logits,
+            )
+        except Exception as e:
+            logger.error("Generate error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.GenerateResponse()
+
+    def Embed(self, request, context):
+        """Handle Embed RPC."""
+        logger.info("Embed called: text=%s...", request.text[:50] if request.text else "")
+
+        try:
+            result = self._loop.run_until_complete(
+                self._service.embed(text=request.text)
+            )
+            return pb2.EmbedResponse(embedding=result.embedding)
+        except Exception as e:
+            logger.error("Embed error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.EmbedResponse()
+# #endregion grpc-servicer
+
+
+# #region serve
+def serve():
+    """Start the gRPC server."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+    port = os.environ.get("GRPC_PORT", "50051")
+    model = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+    ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+
+    inference = InferenceService(model=model, base_url=ollama_url)
+    servicer = CodecServiceServicer(inference)
+
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    pb2_grpc.add_CodecServiceServicer_to_server(servicer, server)
+    server.add_insecure_port(f"0.0.0.0:{port}")
+
+    logger.info("Starting gRPC server on port %s (model=%s, ollama=%s)", port, model, ollama_url)
+    server.start()
+    server.wait_for_termination()
+# #endregion serve
+
+
+if __name__ == "__main__":
+    serve()

@@ -1,0 +1,22 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Go
+go-controller/adaptive_state.db
+go-controller/go-controller.exe
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/

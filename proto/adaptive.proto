@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package adaptive;
+
+option go_package = "github.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptive";
+
+// #region service-definition
+service CodecService {
+  rpc Generate(GenerateRequest) returns (GenerateResponse);
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+}
+// #endregion service-definition
+
+// #region messages
+message GenerateRequest {
+  string prompt = 1;
+  repeated float state_vector = 2;
+  repeated string evidence = 3;
+}
+
+message GenerateResponse {
+  string text = 1;
+  float entropy = 2;
+  repeated float logits = 3;
+}
+
+message EmbedRequest {
+  string text = 1;
+}
+
+message EmbedResponse {
+  repeated float embedding = 1;
+}
+// #endregion messages
