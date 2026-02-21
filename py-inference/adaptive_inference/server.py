@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import sys
+import threading
 from concurrent import futures
 
 import grpc
@@ -23,17 +24,24 @@ logger = logging.getLogger(__name__)
 class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
     """gRPC servicer that delegates to InferenceService."""
 
-    def __init__(self, inference_service: InferenceService, memory_store: MemoryStore):
+    def __init__(self, inference_service: InferenceService, memory_store: MemoryStore, embed_model: str = "qwen2.5-coder:7b"):
         self._service = inference_service
         self._memory = memory_store
+        self._embed_model = embed_model
         self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(target=self._loop.run_forever, daemon=True)
+        self._loop_thread.start()
+
+    def _run(self, coro):
+        """Schedule a coroutine on the dedicated loop and block for the result."""
+        return asyncio.run_coroutine_threadsafe(coro, self._loop).result()
 
     def Generate(self, request, context):
         """Handle Generate RPC."""
         logger.info("Generate called: prompt=%s...", request.prompt[:50] if request.prompt else "")
 
         try:
-            result = self._loop.run_until_complete(
+            result = self._run(
                 self._service.generate(
                     prompt=request.prompt,
                     state_vector=list(request.state_vector),
@@ -56,7 +64,7 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
         logger.info("Embed called: text=%s...", request.text[:50] if request.text else "")
 
         try:
-            result = self._loop.run_until_complete(
+            result = self._run(
                 self._service.embed(text=request.text)
             )
             return pb2.EmbedResponse(embedding=result.embedding)
@@ -73,7 +81,7 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
                      request.top_k, request.similarity_threshold)
 
         try:
-            results = self._loop.run_until_complete(
+            results = self._run(
                 self._memory.search(
                     query_text=request.query_text,
                     top_k=request.top_k if request.top_k > 0 else 5,
@@ -104,7 +112,7 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
         try:
             import json
             metadata = json.loads(request.metadata_json) if request.metadata_json else {}
-            doc_id = self._loop.run_until_complete(
+            doc_id = self._run(
                 self._memory.store(text=request.text, metadata=metadata)
             )
             return pb2.StoreEvidenceResponse(id=doc_id)
@@ -123,18 +131,19 @@ def serve():
 
     port = os.environ.get("GRPC_PORT", "50051")
     model = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+    embed_model = os.environ.get("EMBED_MODEL", "qwen2.5-coder:7b")
     ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
     persist_dir = os.environ.get("MEMORY_PERSIST_DIR", "./chroma_data")
-    inference = InferenceService(model=model, base_url=ollama_url)
-    memory = MemoryStore(persist_dir=persist_dir)
-    servicer = CodecServiceServicer(inference, memory)
+    inference = InferenceService(model=model, base_url=ollama_url, embed_model=embed_model)
+    memory = MemoryStore(persist_dir=persist_dir, embed_model=embed_model)
+    servicer = CodecServiceServicer(inference, memory, embed_model=embed_model)
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     pb2_grpc.add_CodecServiceServicer_to_server(servicer, server)
     server.add_insecure_port(f"0.0.0.0:{port}")
 
-    logger.info("Starting gRPC server on port %s (model=%s, ollama=%s)", port, model, ollama_url)
+    logger.info("Starting gRPC server on port %s (model=%s, embed_model=%s, ollama=%s)", port, model, embed_model, ollama_url)
     server.start()
     server.wait_for_termination()
 # #endregion serve

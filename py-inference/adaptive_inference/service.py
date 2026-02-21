@@ -23,9 +23,10 @@ class EmbedResult:
 class InferenceService:
     """Orchestrates inference calls, injecting state context into prompts."""
 
-    def __init__(self, model: str = ollama_client.DEFAULT_MODEL, base_url: str = ollama_client.DEFAULT_BASE_URL):
+    def __init__(self, model: str = ollama_client.DEFAULT_MODEL, base_url: str = ollama_client.DEFAULT_BASE_URL, embed_model: str = "qwen2.5-coder:7b"):
         self.model = model
         self.base_url = base_url
+        self.embed_model = embed_model
 
     async def generate(
         self, prompt: str, state_vector: list[float], evidence: list[str]
@@ -49,7 +50,7 @@ class InferenceService:
     async def embed(self, text: str) -> EmbedResult:
         """Get embedding for text."""
         embedding = await ollama_client.embed(
-            text=text, model=self.model, base_url=self.base_url
+            text=text, model=self.embed_model, base_url=self.base_url
         )
         return EmbedResult(embedding=embedding)
 
@@ -82,7 +83,7 @@ class InferenceService:
         # Ollama may return eval_count and eval_duration
         eval_count = result.get("eval_count", 0)
         if eval_count > 0:
-            # Rough proxy: more tokens = higher uncertainty
-            return min(float(eval_count) / 100.0, 5.0)
+            # Normalized to [0,1]: 200 tokens → 0.5 entropy
+            return min(float(eval_count) / 400.0, 1.0)
         return 0.0
 # #endregion service

@@ -44,12 +44,12 @@ def test_estimate_entropy_no_eval():
 
 
 def test_estimate_entropy_with_eval():
-    """eval_count of 200 should return 2.0."""
+    """eval_count of 200 should return 0.5."""
     svc = InferenceService()
-    assert svc._estimate_entropy({"eval_count": 200}) == 2.0
+    assert svc._estimate_entropy({"eval_count": 200}) == 0.5
 
 
 def test_estimate_entropy_capped():
-    """Entropy should be capped at 5.0."""
+    """Entropy should be capped at 1.0."""
     svc = InferenceService()
-    assert svc._estimate_entropy({"eval_count": 1000}) == 5.0
+    assert svc._estimate_entropy({"eval_count": 1000}) == 1.0

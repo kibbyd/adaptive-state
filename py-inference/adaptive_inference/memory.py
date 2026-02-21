@@ -26,13 +26,13 @@ class SearchResult:
 class MemoryStore:
     """Wraps ChromaDB for storing and searching evidence documents."""
 
-    def __init__(self, persist_dir: str, collection_name: str = "evidence"):
+    def __init__(self, persist_dir: str, collection_name: str = "evidence", embed_model: str = "qwen2.5-coder:7b"):
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},
         )
-        self._model = ollama_client.DEFAULT_MODEL
+        self._model = embed_model
         self._base_url = ollama_client.DEFAULT_BASE_URL
         logger.info(
             "MemoryStore initialized: persist_dir=%s, collection=%s",
