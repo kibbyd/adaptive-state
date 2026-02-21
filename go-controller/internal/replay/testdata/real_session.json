@@ -1,0 +1,256 @@
+{
+  "description": "Real session export: 4 GateRecord turns from production DB",
+  "start_state": {
+    "version_id": "282200ab-206e-4c83-99c3-50c6b371c2be",
+    "state_vector": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "segment_map": {
+      "prefs": [
+        0,
+        32
+      ],
+      "goals": [
+        32,
+        64
+      ],
+      "heuristics": [
+        64,
+        96
+      ],
+      "risk": [
+        96,
+        128
+      ]
+    }
+  },
+  "config": {
+    "update_config": {
+      "learning_rate": 0.01,
+      "decay_rate": 0.005,
+      "max_delta_norm_per_segment": 1
+    },
+    "gate_config": {
+      "max_delta_norm": 5,
+      "max_state_norm": 50,
+      "min_entropy_drop": 0.1,
+      "risk_segment_cap": 10
+    },
+    "eval_config": {
+      "max_state_norm": 50,
+      "max_segment_norm": 15,
+      "entropy_baseline": 2
+    }
+  },
+  "interactions": [
+    {
+      "turn_id": "turn-1",
+      "prompt": "What is the capital of France?",
+      "response_text": "The capital of France is Paris.",
+      "entropy": 0.015,
+      "signals": {
+        "sentiment_score": 0.985,
+        "novelty_score": 0.16797554,
+        "coherence_score": 0.9183029,
+        "risk_flag": false,
+        "user_correction": false,
+        "tool_failure": false,
+        "constraint_violation": false
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-2",
+      "prompt": "Explain recursion in one sentence",
+      "response_text": "Recursion is a programming technique where a function calls itself to solve smaller instances of the same problem until it reaches a base case that stops further recursive calls.",
+      "entropy": 0.0725,
+      "signals": {
+        "sentiment_score": 0.8635345,
+        "novelty_score": 0.44733542,
+        "coherence_score": 0.4544644,
+        "risk_flag": false,
+        "user_correction": false,
+        "tool_failure": false,
+        "constraint_violation": false
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-3",
+      "prompt": "How do goroutines work?",
+      "response_text": "Goroutines are lightweight threads managed by Go's runtime, allowing concurrent execution within an application without requiring heavy threading overheads typical in other languages like Java or C++. Each Goroutine runs independently and can communicate with others using channels for synchronized data exchange efficiently handling tasks concurrently to improve performance.",
+      "entropy": 0.1225,
+      "signals": {
+        "sentiment_score": 0.8775,
+        "novelty_score": 0.13127154,
+        "coherence_score": 0.8725845,
+        "risk_flag": false,
+        "user_correction": true,
+        "tool_failure": false,
+        "constraint_violation": false
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-4",
+      "prompt": "What is 2+2?",
+      "response_text": "The answer would be: The sum of two and two equals four (4).",
+      "entropy": 0.0325,
+      "signals": {
+        "sentiment_score": 0.8186538,
+        "novelty_score": 0.11281097,
+        "coherence_score": 0.92404246,
+        "risk_flag": false,
+        "user_correction": false,
+        "tool_failure": false,
+        "constraint_violation": false
+      },
+      "evidence": []
+    }
+  ],
+  "expected_results": [
+    {
+      "turn_id": "turn-1",
+      "action": "commit"
+    },
+    {
+      "turn_id": "turn-2",
+      "action": "commit"
+    },
+    {
+      "turn_id": "turn-3",
+      "action": "gate_reject"
+    },
+    {
+      "turn_id": "turn-4",
+      "action": "commit"
+    }
+  ]
+}
