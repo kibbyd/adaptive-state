@@ -113,6 +113,30 @@ func TestEvalMetricCount(t *testing.T) {
 	}
 }
 
+func TestEvalMultipleFailures(t *testing.T) {
+	config := DefaultEvalConfig()
+	config.MaxStateNorm = 1.0
+	config.MaxSegmentNorm = 0.5
+	h := NewEvalHarness(config)
+
+	// Set values that exceed both state norm and segment norms
+	vals := make(map[int]float32)
+	for i := 0; i < 128; i++ {
+		vals[i] = 1.0
+	}
+	st := makeState(vals)
+
+	result := h.Run(st, 0.5)
+
+	if result.Passed {
+		t.Fatal("expected fail on multiple checks")
+	}
+	// Reason should mention multiple checks
+	if len(result.Reason) == 0 {
+		t.Fatal("expected non-empty reason")
+	}
+}
+
 func TestEvalPassesWithModerateValues(t *testing.T) {
 	h := NewEvalHarness(DefaultEvalConfig())
 
