@@ -70,6 +70,11 @@ func NewStore(dbPath string) (*Store, error) {
 	}
 	return &Store{db: db}, nil
 }
+// NewStoreWithDB wraps an existing *sql.DB as a Store (no pragmas/migration).
+func NewStoreWithDB(db *sql.DB) *Store {
+	return &Store{db: db}
+}
+
 // #endregion constructor
 
 // #region close
