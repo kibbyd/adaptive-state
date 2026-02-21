@@ -186,6 +186,7 @@ func TestNoveltyScore_EntropyFallback(t *testing.T) {
 
 func TestRiskFlag_BelowThreshold(t *testing.T) {
 	p := NewProducer(nil, DefaultProducerConfig())
+	// 0.5 < 0.75 threshold → no flag
 	if p.riskFlag(ProduceInput{Entropy: 0.5}) {
 		t.Error("expected no risk flag below threshold")
 	}
@@ -193,15 +194,16 @@ func TestRiskFlag_BelowThreshold(t *testing.T) {
 
 func TestRiskFlag_AboveThreshold(t *testing.T) {
 	p := NewProducer(nil, DefaultProducerConfig())
-	if !p.riskFlag(ProduceInput{Entropy: 1.5}) {
+	// 0.9 >= 0.75 threshold → flag
+	if !p.riskFlag(ProduceInput{Entropy: 0.9}) {
 		t.Error("expected risk flag above threshold")
 	}
 }
 
 func TestRiskFlag_ExactThreshold(t *testing.T) {
 	p := NewProducer(nil, DefaultProducerConfig())
-	// Exact threshold: 0.5 * 2.0 = 1.0
-	if !p.riskFlag(ProduceInput{Entropy: 1.0}) {
+	// Exact threshold: 0.5 * 1.5 = 0.75
+	if !p.riskFlag(ProduceInput{Entropy: 0.75}) {
 		t.Error("expected risk flag at exact threshold")
 	}
 }

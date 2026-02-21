@@ -26,7 +26,7 @@ type ProducerConfig struct {
 // DefaultProducerConfig returns sensible defaults.
 func DefaultProducerConfig() ProducerConfig {
 	return ProducerConfig{
-		RiskEntropyMultiplier: 2.0,
+		RiskEntropyMultiplier: 1.5,
 		EntropyThreshold:      0.5,
 	}
 }
