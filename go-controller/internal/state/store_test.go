@@ -487,6 +487,28 @@ func TestListVersions_WithMetricsJSON(t *testing.T) {
 }
 
 
+func TestListVersions_ScanError(t *testing.T) {
+	// Create schema WITHOUT NOT NULL so we can insert NULL into a non-NullString column
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	db.Exec(`CREATE TABLE state_versions (
+		version_id TEXT PRIMARY KEY, parent_id TEXT, state_vector BLOB,
+		segment_map TEXT, created_at TEXT, metrics_json TEXT
+	)`)
+	db.Exec(`CREATE TABLE active_state (id INTEGER PRIMARY KEY CHECK (id = 1), version_id TEXT)`)
+	// Insert row with NULL segment_map — Scan into string will fail
+	db.Exec(`INSERT INTO state_versions (version_id, state_vector) VALUES ('v1', X'00')`)
+
+	s := NewStoreWithDB(db)
+	_, err = s.ListVersions(10)
+	if err == nil {
+		t.Fatal("expected scan error for NULL in non-NullString column")
+	}
+}
+
 func TestNewStore_CorruptDB(t *testing.T) {
 	// Corrupted DB file — sql.Open succeeds but first PRAGMA fails.
 	// Covers the PRAGMA journal_mode=WAL error path (L62-63).
