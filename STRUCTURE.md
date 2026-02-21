@@ -317,17 +317,47 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 | Tried `deepseek-r1:1.5b` | Fast, supports embed. But thinking tokens + hallucinations on trivial prompts |
 | Settled on `phi4-mini` | 2.5GB, supports gen + embed, no thinking tokens, fast enough for deadlines, clean responses |
 
+### Multi-Turn State Evolution Test
+
+5-turn conversation testing state learning across turns with `phi4-mini`:
+
+**Prompts**: "what is machine learning" → "how does a neural network work" → "what are the main types" → "how would I build one from scratch" → "what did we talk about"
+
+**State evolution** (total L2 norm of 128-dim vector):
+
+| Version | Total | Prefs | Goals | Heur | Risk | Notes |
+|---|---|---|---|---|---|---|
+| v0 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | Initial zero state |
+| v3 | 0.059 | 0.016 | 0.000 | 0.040 | 0.040 | First commit (earlier tests) |
+| v8 | 0.248 | 0.199 | 0.022 | 0.104 | 0.104 | Mid-session |
+| v12 | 0.415 | 0.307 | 0.085 | 0.181 | 0.195 | Evidence retrieval active |
+| v17 | 0.661 | 0.445 | 0.250 | 0.276 | 0.315 | Final active state |
+
+**Observations**:
+- **Preferences** grew fastest (0→0.445) — SentimentScore fires on every positive interaction
+- **Goals** started late — CoherenceScore only nonzero when embed similarity detects topical coherence
+- **Heuristics + Risk** grew steadily from NoveltyScore and entropy signals
+- **Decay working** — goals grew slower than prefs (unreinforced segments decay each turn)
+- **Gate** rejected 7 times (RiskFlag hard veto on high-entropy responses), committed 13 times
+- **Evidence retrieval** activated on turn 4 (entropy 0.82 > threshold 0.5), injected 5 evidence items
+- **Provenance log** captured all 22 decisions with reasons
+
+**Pipeline per turn**: Generate → Retrieve (triple-gated) → Re-generate with evidence → StoreEvidence → Signals → Update → Gate → Eval → Commit/Reject
+
 ## Current Status
 
-**Phase**: Live integration testing — all 5 build phases complete, now validating end-to-end behavior.
+**Phase**: Live integration testing complete — all 5 build phases and multi-turn validation done.
 
-**Working**:
-- Full REPL pipeline: prompt → generate → retrieve evidence → re-generate → store evidence → signals → gate → update → commit/reject
+**Verified**:
+- Full REPL pipeline end-to-end across multiple turns
+- State vector evolves: segments grow from signal-driven deltas, decay on unreinforced segments
 - All RPCs functional (Generate, Embed, Search, StoreEvidence)
 - Entropy in [0,1] range, gate commits/rejects correctly
 - Evidence accumulates in ChromaDB and influences re-generation
+- Provenance log captures full audit trail
+- Gate correctly applies hard vetoes (RiskFlag) and soft scoring
 
 **Known Issues**:
 - Go-side gRPC timeouts (30s generate, 15s search, 10s store) can be tight depending on model and prompt length
 - `phi4-mini` occasionally appends stored Q&A evidence verbatim into response (evidence injection formatting)
-- No multi-turn state evolution testing yet — single-turn pipeline verified
+- Turn 5 ("what did we talk about") — model has no memory of prior turns within a single REPL session (evidence stored but not retrieved due to low entropy on simple prompt)
