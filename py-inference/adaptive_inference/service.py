@@ -11,6 +11,7 @@ class GenerateResult:
     text: str
     entropy: float
     logits: list[float]
+    context: list[int]
 
 
 @dataclass
@@ -29,7 +30,8 @@ class InferenceService:
         self.embed_model = embed_model
 
     async def generate(
-        self, prompt: str, state_vector: list[float], evidence: list[str]
+        self, prompt: str, state_vector: list[float], evidence: list[str],
+        context: list[int] | None = None,
     ) -> GenerateResult:
         """Generate a response conditioned on the state vector."""
         system_preamble = self._format_state_preamble(state_vector, evidence)
@@ -39,13 +41,15 @@ class InferenceService:
             system=system_preamble,
             model=self.model,
             base_url=self.base_url,
+            context=context,
         )
 
         text = result.get("response", "")
         # Phase 1: entropy estimate from response length as proxy
         entropy = self._estimate_entropy(result)
+        new_context = result.get("context", [])
 
-        return GenerateResult(text=text, entropy=entropy, logits=[])
+        return GenerateResult(text=text, entropy=entropy, logits=[], context=new_context)
 
     async def embed(self, text: str) -> EmbedResult:
         """Get embedding for text."""

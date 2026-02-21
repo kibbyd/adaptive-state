@@ -27,6 +27,7 @@ type GenerateRequest struct {
 	Prompt        string                 `protobuf:"bytes,1,opt,name=prompt,proto3" json:"prompt,omitempty"`
 	StateVector   []float32              `protobuf:"fixed32,2,rep,packed,name=state_vector,json=stateVector,proto3" json:"state_vector,omitempty"`
 	Evidence      []string               `protobuf:"bytes,3,rep,name=evidence,proto3" json:"evidence,omitempty"`
+	Context       []int64                `protobuf:"varint,4,rep,packed,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,11 +83,19 @@ func (x *GenerateRequest) GetEvidence() []string {
 	return nil
 }
 
+func (x *GenerateRequest) GetContext() []int64 {
+	if x != nil {
+		return x.Context
+	}
+	return nil
+}
+
 type GenerateResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
 	Entropy       float32                `protobuf:"fixed32,2,opt,name=entropy,proto3" json:"entropy,omitempty"`
 	Logits        []float32              `protobuf:"fixed32,3,rep,packed,name=logits,proto3" json:"logits,omitempty"`
+	Context       []int64                `protobuf:"varint,4,rep,packed,name=context,proto3" json:"context,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -138,6 +147,13 @@ func (x *GenerateResponse) GetEntropy() float32 {
 func (x *GenerateResponse) GetLogits() []float32 {
 	if x != nil {
 		return x.Logits
+	}
+	return nil
+}
+
+func (x *GenerateResponse) GetContext() []int64 {
+	if x != nil {
+		return x.Context
 	}
 	return nil
 }
@@ -510,15 +526,17 @@ var File_adaptive_proto protoreflect.FileDescriptor
 
 const file_adaptive_proto_rawDesc = "" +
 	"\n" +
-	"\x0eadaptive.proto\x12\badaptive\"h\n" +
+	"\x0eadaptive.proto\x12\badaptive\"\x82\x01\n" +
 	"\x0fGenerateRequest\x12\x16\n" +
 	"\x06prompt\x18\x01 \x01(\tR\x06prompt\x12!\n" +
 	"\fstate_vector\x18\x02 \x03(\x02R\vstateVector\x12\x1a\n" +
-	"\bevidence\x18\x03 \x03(\tR\bevidence\"X\n" +
+	"\bevidence\x18\x03 \x03(\tR\bevidence\x12\x18\n" +
+	"\acontext\x18\x04 \x03(\x03R\acontext\"r\n" +
 	"\x10GenerateResponse\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x18\n" +
 	"\aentropy\x18\x02 \x01(\x02R\aentropy\x12\x16\n" +
-	"\x06logits\x18\x03 \x03(\x02R\x06logits\"\"\n" +
+	"\x06logits\x18\x03 \x03(\x02R\x06logits\x12\x18\n" +
+	"\acontext\x18\x04 \x03(\x03R\acontext\"\"\n" +
 	"\fEmbedRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"-\n" +
 	"\rEmbedResponse\x12\x1c\n" +

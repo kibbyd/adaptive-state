@@ -15,6 +15,7 @@ type GenerateResult struct {
 	Text    string
 	Entropy float32
 	Logits  []float32
+	Context []int64
 }
 
 // SearchResult holds a single result from a Search RPC call.
@@ -63,7 +64,7 @@ func (c *CodecClient) Close() error {
 
 // #region generate
 // Generate sends a prompt with state context to the inference service.
-func (c *CodecClient) Generate(ctx context.Context, prompt string, stateVec [128]float32, evidence []string) (GenerateResult, error) {
+func (c *CodecClient) Generate(ctx context.Context, prompt string, stateVec [128]float32, evidence []string, ollamaCtx []int64) (GenerateResult, error) {
 	vecSlice := make([]float32, 128)
 	copy(vecSlice, stateVec[:])
 
@@ -71,6 +72,7 @@ func (c *CodecClient) Generate(ctx context.Context, prompt string, stateVec [128
 		Prompt:      prompt,
 		StateVector: vecSlice,
 		Evidence:    evidence,
+		Context:     ollamaCtx,
 	})
 	if err != nil {
 		return GenerateResult{}, fmt.Errorf("generate rpc: %w", err)
@@ -80,6 +82,7 @@ func (c *CodecClient) Generate(ctx context.Context, prompt string, stateVec [128
 		Text:    resp.Text,
 		Entropy: resp.Entropy,
 		Logits:  resp.Logits,
+		Context: resp.Context,
 	}, nil
 }
 // #endregion generate

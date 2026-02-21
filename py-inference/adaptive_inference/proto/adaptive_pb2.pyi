@@ -7,24 +7,28 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class GenerateRequest(_message.Message):
-    __slots__ = ("prompt", "state_vector", "evidence")
+    __slots__ = ("prompt", "state_vector", "evidence", "context")
     PROMPT_FIELD_NUMBER: _ClassVar[int]
     STATE_VECTOR_FIELD_NUMBER: _ClassVar[int]
     EVIDENCE_FIELD_NUMBER: _ClassVar[int]
+    CONTEXT_FIELD_NUMBER: _ClassVar[int]
     prompt: str
     state_vector: _containers.RepeatedScalarFieldContainer[float]
     evidence: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, prompt: _Optional[str] = ..., state_vector: _Optional[_Iterable[float]] = ..., evidence: _Optional[_Iterable[str]] = ...) -> None: ...
+    context: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, prompt: _Optional[str] = ..., state_vector: _Optional[_Iterable[float]] = ..., evidence: _Optional[_Iterable[str]] = ..., context: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class GenerateResponse(_message.Message):
-    __slots__ = ("text", "entropy", "logits")
+    __slots__ = ("text", "entropy", "logits", "context")
     TEXT_FIELD_NUMBER: _ClassVar[int]
     ENTROPY_FIELD_NUMBER: _ClassVar[int]
     LOGITS_FIELD_NUMBER: _ClassVar[int]
+    CONTEXT_FIELD_NUMBER: _ClassVar[int]
     text: str
     entropy: float
     logits: _containers.RepeatedScalarFieldContainer[float]
-    def __init__(self, text: _Optional[str] = ..., entropy: _Optional[float] = ..., logits: _Optional[_Iterable[float]] = ...) -> None: ...
+    context: _containers.RepeatedScalarFieldContainer[int]
+    def __init__(self, text: _Optional[str] = ..., entropy: _Optional[float] = ..., logits: _Optional[_Iterable[float]] = ..., context: _Optional[_Iterable[int]] = ...) -> None: ...
 
 class EmbedRequest(_message.Message):
     __slots__ = ("text",)

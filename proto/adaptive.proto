@@ -18,12 +18,14 @@ message GenerateRequest {
   string prompt = 1;
   repeated float state_vector = 2;
   repeated string evidence = 3;
+  repeated int64 context = 4;
 }
 
 message GenerateResponse {
   string text = 1;
   float entropy = 2;
   repeated float logits = 3;
+  repeated int64 context = 4;
 }
 
 message EmbedRequest {

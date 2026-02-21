@@ -76,7 +76,7 @@ func TestGenerate_Success(t *testing.T) {
 	}
 	c := &CodecClient{client: mock}
 
-	result, err := c.Generate(context.Background(), "prompt", [128]float32{}, []string{"ev1"})
+	result, err := c.Generate(context.Background(), "prompt", [128]float32{}, []string{"ev1"}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestGenerate_Error(t *testing.T) {
 	}
 	c := &CodecClient{client: mock}
 
-	_, err := c.Generate(context.Background(), "prompt", [128]float32{}, nil)
+	_, err := c.Generate(context.Background(), "prompt", [128]float32{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

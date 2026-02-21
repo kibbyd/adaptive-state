@@ -69,6 +69,7 @@ func main() {
 	// Phase 5: Heuristic signal producer
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
+	var ollamaCtx []int64
 
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
@@ -107,12 +108,13 @@ func main() {
 
 		// Step 2: First-pass Generate to get entropy
 		ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil)
+		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil, ollamaCtx)
 		cancel()
 		if err != nil {
 			log.Printf("codec error: %v", err)
 			continue
 		}
+		ollamaCtx = result.Context
 
 		// Step 3: Triple-gated retrieval (if entropy warrants it)
 		var evidenceStrings []string
@@ -131,12 +133,13 @@ func main() {
 
 			// Re-generate with evidence injected
 			ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx3, prompt, current.StateVector, evidenceStrings)
+			result, err = codecClient.Generate(ctx3, prompt, current.StateVector, evidenceStrings, ollamaCtx)
 			cancel3()
 			if err != nil {
 				log.Printf("re-generate error: %v", err)
 				continue
 			}
+			ollamaCtx = result.Context
 		} else {
 			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 		}

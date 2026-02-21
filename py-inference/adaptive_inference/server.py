@@ -46,12 +46,14 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
                     prompt=request.prompt,
                     state_vector=list(request.state_vector),
                     evidence=list(request.evidence),
+                    context=list(request.context) if request.context else None,
                 )
             )
             return pb2.GenerateResponse(
                 text=result.text,
                 entropy=result.entropy,
                 logits=result.logits,
+                context=result.context,
             )
         except Exception as e:
             logger.error("Generate error: %s", e)

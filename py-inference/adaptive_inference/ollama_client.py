@@ -14,6 +14,7 @@ async def generate(
     system: str = "",
     model: str = DEFAULT_MODEL,
     base_url: str = DEFAULT_BASE_URL,
+    context: list[int] | None = None,
 ) -> dict:
     """Call Ollama /api/generate and return the response dict."""
     payload = {
@@ -23,6 +24,8 @@ async def generate(
     }
     if system:
         payload["system"] = system
+    if context:
+        payload["context"] = context
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{base_url}/api/generate", json=payload)

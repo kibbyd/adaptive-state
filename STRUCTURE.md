@@ -234,6 +234,10 @@ Bundles all three stage configs into one struct:
 | `GRPC_PORT` | `50051` | Python gRPC server listen port |
 | `CODEC_ADDR` | `localhost:50051` | Go controller gRPC target |
 | `MEMORY_PERSIST_DIR` | `./chroma_data` | ChromaDB persistence directory |
+| `TIMEOUT_GENERATE` | `60` | Generate RPC timeout in seconds (used for first-pass and re-generate) |
+| `TIMEOUT_SEARCH` | `30` | Search (retrieval) RPC timeout in seconds |
+| `TIMEOUT_STORE` | `15` | StoreEvidence RPC timeout in seconds |
+| `TIMEOUT_EMBED` | `15` | Embed RPC timeout in seconds (signal producer) |
 
 ### Model Compatibility
 
@@ -310,6 +314,8 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
   4. **Preamble leaking**: Models interpret state norms as content → removed norms from system prompt entirely
   5. **Low-entropy retrieval gap**: Recall prompts missed stored evidence → `AlwaysRetrieve=true` bypasses Gate 1 entropy check
   6. **RiskFlag too aggressive**: Threshold was calibrated for old 0-5.0 entropy scale → adjusted from 1.0 to 0.75 for [0,1] range
+  7. **Evidence verbatim regurgitation**: Model appended raw Q&A pairs → numbered entries with truncation + "do not repeat verbatim" instruction
+  8. **gRPC timeouts too tight**: Hardcoded 30s/15s/10s → configurable via `TIMEOUT_GENERATE`/`TIMEOUT_SEARCH`/`TIMEOUT_STORE`/`TIMEOUT_EMBED` env vars (defaults 60/30/15/15)
 
 ### Model Selection Decisions
 
@@ -361,5 +367,4 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 - Provenance log captures full audit trail
 - Gate correctly applies hard vetoes (RiskFlag) and soft scoring
 
-**Known Issues**:
-- Go-side gRPC timeouts (30s generate, 15s search, 10s store) can be tight depending on model and prompt length
+**All known issues resolved.** gRPC timeouts now configurable via env vars (defaults: 60s generate, 30s search, 15s store, 15s embed).
