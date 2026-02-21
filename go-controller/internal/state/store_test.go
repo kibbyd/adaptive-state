@@ -445,6 +445,66 @@ func TestListVersions_BadSegmentJSON(t *testing.T) {
 	}
 }
 
+func TestListVersions_WithMetricsJSON(t *testing.T) {
+	s := tempDB(t)
+	seg := DefaultSegmentMap()
+
+	v1, err := s.CreateInitialState(seg)
+	if err != nil {
+		t.Fatalf("CreateInitialState: %v", err)
+	}
+
+	v2 := StateRecord{
+		VersionID:   "v2-list-metrics",
+		ParentID:    v1.VersionID,
+		StateVector: v1.StateVector,
+		SegmentMap:  seg,
+		CreatedAt:   v1.CreatedAt.Add(time.Second),
+		MetricsJSON: `{"delta_norm":0.3}`,
+	}
+	if err := s.CommitState(v2); err != nil {
+		t.Fatalf("CommitState: %v", err)
+	}
+
+	versions, err := s.ListVersions(10)
+	if err != nil {
+		t.Fatalf("ListVersions: %v", err)
+	}
+
+	// Find the version with metrics
+	var found bool
+	for _, v := range versions {
+		if v.VersionID == "v2-list-metrics" {
+			found = true
+			if v.MetricsJSON != `{"delta_norm":0.3}` {
+				t.Errorf("expected metrics JSON, got %q", v.MetricsJSON)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected to find v2-list-metrics in list")
+	}
+}
+
+
+func TestNewStore_CorruptDB(t *testing.T) {
+	// Corrupted DB file — sql.Open succeeds but first PRAGMA fails.
+	// Covers the PRAGMA journal_mode=WAL error path (L62-63).
+	dir, err := os.MkdirTemp("", "state-corrupt-test-*")
+	if err != nil {
+		t.Fatalf("mkdirtemp: %v", err)
+	}
+	dbPath := filepath.Join(dir, "corrupt.db")
+	os.WriteFile(dbPath, []byte("not a sqlite database"), 0644)
+
+	_, err = NewStore(dbPath)
+	if err == nil {
+		t.Fatal("expected error for corrupted DB file")
+	}
+	// Best-effort cleanup; may fail on Windows due to leaked DB handle
+	os.RemoveAll(dir)
+}
+
 func TestNewStore_PragmaFails(t *testing.T) {
 	if filepath.Separator == '\\' {
 		t.Skip("os.Chmod(0444) does not prevent writes on Windows")
