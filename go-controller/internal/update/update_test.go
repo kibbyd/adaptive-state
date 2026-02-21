@@ -309,6 +309,80 @@ func TestEntropyDrivesRiskSegment(t *testing.T) {
 	}
 }
 
+func TestNegativeEntropyClamped(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	for i := 96; i < 128; i++ {
+		old.StateVector[i] = 0.5
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1", Entropy: -0.5}
+	sig := Signals{}
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Negative entropy clamped to 0 → risk segment not reinforced, no delta applied
+	// Only decay should occur on non-zero segments
+	if result.Decision.Action != "commit" {
+		t.Fatalf("expected commit from decay, got %s", result.Decision.Action)
+	}
+}
+
+func TestHighEntropyClamped(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	for i := 96; i < 128; i++ {
+		old.StateVector[i] = 0.5
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1", Entropy: 5.0} // > 1, should clamp
+	sig := Signals{}
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Risk segment should be hit (entropy > 0 reinforces + delta applied with clamped strength = 1.0)
+	found := false
+	for _, s := range result.Metrics.SegmentsHit {
+		if s == "risk" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected 'risk' in SegmentsHit with high entropy")
+	}
+}
+
+func TestNegativeStateDirection(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	// Seed prefs with negative values
+	for i := 0; i < 32; i++ {
+		old.StateVector[i] = -0.5
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{SentimentScore: 0.8}
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Delta direction should be -1 for negative values → values become more negative
+	for i := 0; i < 32; i++ {
+		if result.NewState.StateVector[i] > old.StateVector[i] {
+			t.Fatalf("index %d: expected value to decrease (negative direction), old=%.4f new=%.4f",
+				i, old.StateVector[i], result.NewState.StateVector[i])
+		}
+	}
+}
+
 func TestMultipleSignals(t *testing.T) {
 	old := state.StateRecord{
 		VersionID:  "v1",
