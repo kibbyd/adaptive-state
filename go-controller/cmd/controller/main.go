@@ -19,6 +19,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/signals"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/update"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/websearch"
 )
 
 // #region main
@@ -70,6 +71,9 @@ func main() {
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
 	var ollamaCtx []int64
+
+	// Web search fallback config
+	webSearchCfg := websearch.DefaultConfig()
 
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
@@ -142,6 +146,30 @@ func main() {
 			ollamaCtx = result.Context
 		} else {
 			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
+		}
+
+		// Web search fallback: no evidence + high entropy → search the web
+		if len(evidenceStrings) == 0 && float64(result.Entropy) > webSearchCfg.EntropyThreshold && webSearchCfg.Enabled {
+			webCtx, webCancel := context.WithTimeout(context.Background(), webSearchCfg.Timeout)
+			webResults, webErr := websearch.Search(webCtx, prompt, webSearchCfg)
+			webCancel()
+			if webErr != nil {
+				log.Printf("[%s] web search error (non-fatal): %v", turnID, webErr)
+			} else if len(webResults) > 0 {
+				webEvidence := websearch.FormatAsEvidence(webResults)
+				evidenceStrings = append(evidenceStrings, webEvidence)
+				log.Printf("[%s] web search: injected %d results", turnID, len(webResults))
+
+				// Re-generate with web search evidence
+				webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
+				result, err = codecClient.Generate(webGenCtx, prompt, current.StateVector, evidenceStrings, ollamaCtx)
+				webGenCancel()
+				if err != nil {
+					log.Printf("web re-generate error: %v", err)
+					continue
+				}
+				ollamaCtx = result.Context
+			}
 		}
 
 		fmt.Printf("\n%s\n\n", result.Text)
