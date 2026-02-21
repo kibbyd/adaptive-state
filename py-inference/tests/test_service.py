@@ -6,19 +6,20 @@ from adaptive_inference.service import InferenceService
 
 
 def test_format_state_preamble_zeros():
-    """State preamble with zero vector should show zero norms."""
+    """State preamble with zero vector should show opaque keys with zero norms."""
     svc = InferenceService()
     preamble = svc._format_state_preamble([0.0] * 128, [])
-    assert "[Adaptive State Context]" in preamble
-    assert "norm=0.0000" in preamble
+    assert "DO NOT interpret" in preamble
+    assert "s0=0.0000" in preamble
+    assert "s1=0.0000" in preamble
+    assert "preferences" not in preamble
 
 
 def test_format_state_preamble_with_evidence():
     """State preamble should include evidence refs."""
     svc = InferenceService()
     preamble = svc._format_state_preamble([0.0] * 128, ["doc1", "doc2"])
-    assert "doc1" in preamble
-    assert "doc2" in preamble
+    assert "refs: doc1, doc2" in preamble
 
 
 def test_format_state_preamble_short_vector():
@@ -29,12 +30,12 @@ def test_format_state_preamble_short_vector():
 
 
 def test_format_state_preamble_norms():
-    """Non-zero segments should produce non-zero norms."""
+    """Non-zero segments should produce non-zero norms with opaque keys."""
     svc = InferenceService()
     vec = [0.0] * 128
-    vec[0] = 1.0  # preferences segment
+    vec[0] = 1.0  # s0 segment
     preamble = svc._format_state_preamble(vec, [])
-    assert "preferences: norm=1.0000" in preamble
+    assert "s0=1.0000" in preamble
 
 
 def test_estimate_entropy_empty_response():

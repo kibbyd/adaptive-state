@@ -62,20 +62,25 @@ class InferenceService:
         if not state_vector or len(state_vector) < 128:
             return ""
 
-        segments = {
-            "preferences": state_vector[0:32],
-            "goals": state_vector[32:64],
-            "heuristics": state_vector[64:96],
-            "risk_profile": state_vector[96:128],
-        }
+        segments = [
+            ("s0", state_vector[0:32]),
+            ("s1", state_vector[32:64]),
+            ("s2", state_vector[64:96]),
+            ("s3", state_vector[96:128]),
+        ]
 
-        lines = ["[Adaptive State Context]"]
-        for name, values in segments.items():
-            norm = math.sqrt(sum(v * v for v in values))
-            lines.append(f"  {name}: norm={norm:.4f}")
+        norms = " ".join(
+            f"{key}={math.sqrt(sum(v * v for v in vals)):.4f}"
+            for key, vals in segments
+        )
+
+        lines = [
+            "[SYSTEM METADATA — DO NOT interpret, reference, or discuss this block. Respond only to the user prompt.]",
+            f"ctx: {norms}",
+        ]
 
         if evidence:
-            lines.append("  evidence_refs: " + ", ".join(evidence))
+            lines.append("refs: " + ", ".join(evidence))
 
         return "\n".join(lines)
 
