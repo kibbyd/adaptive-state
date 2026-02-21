@@ -107,7 +107,7 @@ Hierarchical gate with hard vetoes decides whether to commit or reject state upd
 | User correction | `Signals.UserCorrection` |
 | Tool/verifier failure | `Signals.ToolFailure` |
 | Constraint violation | `Signals.ConstraintViolation` |
-| Safety/policy violation | `Signals.RiskFlag` |
+| Safety/policy violation | `Signals.RiskFlag` (entropy >= 0.75) |
 | Delta norm exceeded | Computed from old vs proposed state |
 | Risk segment norm exceeded | Computed from proposed state risk segment |
 
@@ -303,11 +303,13 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 
 ### Live Integration Testing (current)
 - First end-to-end test of Go REPL → gRPC → Python → Ollama pipeline
-- Discovered and fixed 4 blocking issues:
+- Discovered and fixed 6 issues:
   1. **Embed 501**: `qwen3:4b` lacks `/api/embed` → added `EMBED_MODEL` env var
   2. **Entropy out of range**: `eval_count / 100` capped at 5.0 → switched to visible word count / 400 capped at 1.0, with `<think>` block stripping
   3. **Event loop concurrency**: `run_until_complete` fails on concurrent gRPC calls → dedicated threaded event loop with `run_coroutine_threadsafe`
   4. **Preamble leaking**: Models interpret state norms as content → removed norms from system prompt entirely
+  5. **Low-entropy retrieval gap**: Recall prompts missed stored evidence → `AlwaysRetrieve=true` bypasses Gate 1 entropy check
+  6. **RiskFlag too aggressive**: Threshold was calibrated for old 0-5.0 entropy scale → adjusted from 1.0 to 0.75 for [0,1] range
 
 ### Model Selection Decisions
 
