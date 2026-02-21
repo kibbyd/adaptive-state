@@ -261,6 +261,13 @@ func TestReplay_Summarize(t *testing.T) {
 
 	results := Replay(start, inters, config)
 
+	// Append a synthetic eval_rollback result to exercise that Summarize branch
+	results = append(results, ReplayResult{
+		TurnID: "turn-synthetic",
+		Action: "eval_rollback",
+		Reason: "synthetic for coverage",
+	})
+
 	// Find final state from last commit
 	var finalState state.StateRecord
 	finalState = start
@@ -273,14 +280,17 @@ func TestReplay_Summarize(t *testing.T) {
 
 	summary := Summarize(results, finalState)
 
-	if summary.TotalTurns != 4 {
-		t.Errorf("expected TotalTurns=4, got %d", summary.TotalTurns)
+	if summary.TotalTurns != 5 {
+		t.Errorf("expected TotalTurns=5, got %d", summary.TotalTurns)
 	}
 	if summary.Commits != 2 {
 		t.Errorf("expected Commits=2, got %d", summary.Commits)
 	}
 	if summary.GateRejects != 1 {
 		t.Errorf("expected GateRejects=1, got %d", summary.GateRejects)
+	}
+	if summary.EvalRollbacks != 1 {
+		t.Errorf("expected EvalRollbacks=1, got %d", summary.EvalRollbacks)
 	}
 	if summary.NoOps != 1 {
 		t.Errorf("expected NoOps=1, got %d", summary.NoOps)
