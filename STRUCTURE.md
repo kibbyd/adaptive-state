@@ -256,7 +256,7 @@ The system prompt does **not** inject state vector norms. Small models interpret
 
 State conditioning happens through the Go-side pipeline (gate thresholds, retrieval gating, update deltas, decay). The model only receives:
 - A base system instruction ("You are a helpful assistant.")
-- Evidence from ChromaDB (when retrieved), formatted as "Prior context: ..."
+- Evidence from ChromaDB (when retrieved), formatted as numbered entries with an instruction to use as context without repeating verbatim. Each entry is truncated at 500 chars.
 
 ### Event Loop Architecture
 
@@ -363,5 +363,3 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 
 **Known Issues**:
 - Go-side gRPC timeouts (30s generate, 15s search, 10s store) can be tight depending on model and prompt length
-- `phi4-mini` occasionally appends stored Q&A evidence verbatim into response (evidence injection formatting)
-- ~~Turn 5 recall gap~~ — Fixed: `AlwaysRetrieve=true` bypasses Gate 1 entropy check, allowing recall prompts to retrieve stored evidence
