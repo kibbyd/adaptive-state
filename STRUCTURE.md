@@ -130,6 +130,50 @@ Hierarchical gate with hard vetoes decides whether to commit or reject state upd
 | Per-segment L2 norm | Yes | MaxSegmentNorm (default 15.0) |
 | Entropy vs baseline | No (informational) | EntropyBaseline (default 2.0) |
 
+## State Learning + Decay (Phase 4)
+
+### Signal → Segment Mapping
+
+| Signal | Target Segment | Indices | Rationale |
+|---|---|---|---|
+| `SentimentScore` | Prefs | 0–31 | Tone/style preferences |
+| `CoherenceScore` | Goals | 32–63 | Coherent objective tracking |
+| `NoveltyScore` | Heuristics | 64–95 | New strategy exploration |
+| Entropy (`UpdateContext.Entropy`) | Risk | 96–127 | Uncertainty calibration |
+
+### Delta Formula
+
+```
+delta[i] = learning_rate * signal_strength * direction[i]
+```
+
+Where `direction[i]` = sign of existing state value (+1 for zero elements). Delta is L2-clamped to `MaxDeltaNormPerSegment` per segment.
+
+### Decay Formula
+
+Applied per-element before delta computation:
+```
+state[i] *= (1 - decay_rate)
+```
+
+Decay only applies to segments NOT reinforced this turn (no mapped signal > 0). Reinforced segments are preserved.
+
+### UpdateConfig Defaults
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `LearningRate` | 0.01 | Magnitude of signal-driven deltas |
+| `DecayRate` | 0.005 | Per-element multiplicative decay |
+| `MaxDeltaNormPerSegment` | 1.0 | L2 clamp per segment |
+
+### Update Flow
+
+1. Copy old state vector
+2. **Decay pass**: For each unreinforced segment, apply `state[i] *= (1 - DecayRate)`
+3. **Delta pass**: For each signal > 0, compute bounded delta across target segment, clamp to `MaxDeltaNormPerSegment`
+4. Compute metrics (per-segment delta/decay norms, total delta norm)
+5. Decision: `"commit"` if total delta > 0, else `"no_op"`
+
 ## Communication
 
 - Go ↔ Python: gRPC on port 50051 (configurable via `CODEC_ADDR` / `GRPC_PORT`)

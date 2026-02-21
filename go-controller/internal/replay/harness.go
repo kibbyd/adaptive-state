@@ -44,7 +44,7 @@ func Replay(store *state.Store, fromVersionID string, interactions []Interaction
 			Entropy:      inter.Entropy,
 		}
 
-		result := update.Update(current, ctx, inter.Signals, inter.Evidence)
+		result := update.Update(current, ctx, inter.Signals, inter.Evidence, update.DefaultUpdateConfig())
 
 		results = append(results, ReplayResult{
 			TurnID:    inter.TurnID,

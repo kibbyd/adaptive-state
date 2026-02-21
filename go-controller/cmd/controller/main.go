@@ -55,6 +55,9 @@ func main() {
 	stateGate := gate.NewGate(gate.DefaultGateConfig())
 	evalHarness := eval.NewEvalHarness(eval.DefaultEvalConfig())
 
+	// Phase 4: Update config for learning + decay
+	updateConfig := update.DefaultUpdateConfig()
+
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
 	fmt.Println("Type a prompt (or 'quit' to exit):")
@@ -140,8 +143,9 @@ func main() {
 			ResponseText: result.Text,
 			Entropy:      result.Entropy,
 		}
-		signals := update.Signals{} // Phase 3: signals populated by future phases
-		updateResult := update.Update(current, updateCtx, signals, evidenceStrings)
+		// Phase 4: Entropy drives Risk segment; other signals remain 0 until producers exist
+		signals := update.Signals{}
+		updateResult := update.Update(current, updateCtx, signals, evidenceStrings, updateConfig)
 
 		// Step 6: Gate evaluation — hard vetoes + soft scoring
 		gateDecision := stateGate.Evaluate(

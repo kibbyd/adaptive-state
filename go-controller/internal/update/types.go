@@ -34,13 +34,39 @@ type Decision struct {
 // #endregion decision
 
 // #region metrics
+// SegmentMetric captures per-segment telemetry from an update cycle.
+type SegmentMetric struct {
+	Name      string
+	DeltaNorm float32
+	DecayNorm float32 // L2 norm of decay applied this turn
+}
+
 // Metrics captures telemetry from an update cycle.
 type Metrics struct {
-	DeltaNorm    float32
-	SegmentsHit  []string
-	UpdateTimeMs int64
+	DeltaNorm      float32
+	SegmentsHit    []string
+	SegmentMetrics []SegmentMetric
+	UpdateTimeMs   int64
 }
 // #endregion metrics
+
+// #region update-config
+// UpdateConfig holds learning and decay parameters for the update function.
+type UpdateConfig struct {
+	LearningRate           float32 // magnitude of signal-driven deltas (default 0.01)
+	DecayRate              float32 // per-element multiplicative decay (default 0.005)
+	MaxDeltaNormPerSegment float32 // L2 clamp per segment (default 1.0)
+}
+
+// DefaultUpdateConfig returns sensible defaults for Phase 4.
+func DefaultUpdateConfig() UpdateConfig {
+	return UpdateConfig{
+		LearningRate:           0.01,
+		DecayRate:              0.005,
+		MaxDeltaNormPerSegment: 1.0,
+	}
+}
+// #endregion update-config
 
 // #region update-result
 // UpdateResult bundles everything returned by Update().
