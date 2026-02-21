@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,12 @@ import (
 func main() {
 	dbPath := envOr("ADAPTIVE_DB", "adaptive_state.db")
 	grpcAddr := envOr("CODEC_ADDR", "localhost:50051")
+
+	// Configurable gRPC timeouts
+	timeoutGenerate := envDuration("TIMEOUT_GENERATE", 60)
+	timeoutSearch := envDuration("TIMEOUT_SEARCH", 30)
+	timeoutStore := envDuration("TIMEOUT_STORE", 15)
+	timeoutEmbed := envDuration("TIMEOUT_EMBED", 15)
 
 	// Initialize state store
 	store, err := state.NewStore(dbPath)
@@ -99,7 +106,7 @@ func main() {
 		}
 
 		// Step 2: First-pass Generate to get entropy
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
 		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil)
 		cancel()
 		if err != nil {
@@ -110,7 +117,7 @@ func main() {
 		// Step 3: Triple-gated retrieval (if entropy warrants it)
 		var evidenceStrings []string
 		var evidenceRefs []string
-		ctx2, cancel2 := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
 		gateResult, err := retriever.Retrieve(ctx2, prompt, result.Entropy)
 		cancel2()
 		if err != nil {
@@ -123,7 +130,7 @@ func main() {
 			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 
 			// Re-generate with evidence injected
-			ctx3, cancel3 := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
 			result, err = codecClient.Generate(ctx3, prompt, current.StateVector, evidenceStrings)
 			cancel3()
 			if err != nil {
@@ -139,7 +146,7 @@ func main() {
 		// Step 4: Store this interaction as evidence for future retrieval
 		storeText := fmt.Sprintf("Q: %s\nA: %s", prompt, result.Text)
 		metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f}`, turnID, result.Entropy)
-		ctx4, cancel4 := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
 		_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
 		cancel4()
 		if storeErr != nil {
@@ -163,7 +170,7 @@ func main() {
 			Gate2Count:   gateResult.Gate2Count,
 			UserCorrect:  userCorrected,
 		}
-		ctx5, cancel5 := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx5, cancel5 := context.WithTimeout(context.Background(), timeoutEmbed)
 		sigs := signalProducer.Produce(ctx5, signalInput)
 		cancel5()
 		userCorrected = false
@@ -251,6 +258,15 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envDuration(key string, defaultSec int) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	return time.Duration(defaultSec) * time.Second
 }
 
 // #endregion helpers
