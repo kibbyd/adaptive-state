@@ -130,7 +130,7 @@ def serve():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     port = os.environ.get("GRPC_PORT", "50051")
-    model = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b")
     embed_model = os.environ.get("EMBED_MODEL", "qwen2.5-coder:7b")
     ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
