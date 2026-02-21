@@ -15,6 +15,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/retrieval"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/signals"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/update"
 )
@@ -58,6 +59,10 @@ func main() {
 	// Phase 4: Update config for learning + decay
 	updateConfig := update.DefaultUpdateConfig()
 
+	// Phase 5: Heuristic signal producer
+	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
+	var userCorrected bool
+
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
 	fmt.Println("Type a prompt (or 'quit' to exit):")
@@ -76,6 +81,11 @@ func main() {
 		}
 		if prompt == "quit" || prompt == "exit" {
 			break
+		}
+		if prompt == "/correct" {
+			userCorrected = true
+			fmt.Println("Noted. Next update will carry UserCorrection veto.")
+			continue
 		}
 
 		turnNum++
@@ -143,13 +153,25 @@ func main() {
 			ResponseText: result.Text,
 			Entropy:      result.Entropy,
 		}
-		// Phase 4: Entropy drives Risk segment; other signals remain 0 until producers exist
-		signals := update.Signals{}
-		updateResult := update.Update(current, updateCtx, signals, evidenceStrings, updateConfig)
+		// Phase 5: Compute heuristic signals from loop data
+		signalInput := signals.ProduceInput{
+			Prompt:       prompt,
+			ResponseText: result.Text,
+			Entropy:      result.Entropy,
+			Logits:       result.Logits,
+			Retrieved:    gateResult.Retrieved,
+			Gate2Count:   gateResult.Gate2Count,
+			UserCorrect:  userCorrected,
+		}
+		ctx5, cancel5 := context.WithTimeout(context.Background(), 10*time.Second)
+		sigs := signalProducer.Produce(ctx5, signalInput)
+		cancel5()
+		userCorrected = false
+		updateResult := update.Update(current, updateCtx, sigs, evidenceStrings, updateConfig)
 
 		// Step 6: Gate evaluation — hard vetoes + soft scoring
 		gateDecision := stateGate.Evaluate(
-			current, updateResult.NewState, signals, updateResult.Metrics, result.Entropy,
+			current, updateResult.NewState, sigs, updateResult.Metrics, result.Entropy,
 		)
 
 		if gateDecision.Action == "reject" {
