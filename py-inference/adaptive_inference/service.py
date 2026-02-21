@@ -67,7 +67,13 @@ class InferenceService:
 
         if evidence:
             lines.append("---")
-            lines.append("Prior context: " + " ".join(evidence))
+            lines.append("Use the following prior context to inform your answer. Do not repeat it verbatim.")
+            for i, item in enumerate(evidence, 1):
+                # Truncate long evidence and strip Q&A formatting
+                text = item.strip()
+                if len(text) > 500:
+                    text = text[:500] + "..."
+                lines.append(f"[{i}] {text}")
 
         return "\n".join(lines)
 

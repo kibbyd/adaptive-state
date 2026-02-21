@@ -13,12 +13,12 @@ def test_format_state_preamble_base():
 
 
 def test_format_state_preamble_with_evidence():
-    """Preamble should include evidence as prior context."""
+    """Preamble should include numbered evidence with instruction."""
     svc = InferenceService()
     preamble = svc._format_state_preamble([0.0] * 128, ["doc1", "doc2"])
-    assert "Prior context:" in preamble
-    assert "doc1" in preamble
-    assert "doc2" in preamble
+    assert "Do not repeat it verbatim" in preamble
+    assert "[1] doc1" in preamble
+    assert "[2] doc2" in preamble
 
 
 def test_format_state_preamble_no_evidence():
