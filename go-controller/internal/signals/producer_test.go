@@ -118,6 +118,20 @@ func TestCoherenceScore_EmbedError(t *testing.T) {
 	}
 }
 
+func TestCoherenceScore_SecondEmbedError(t *testing.T) {
+	// Prompt embedding succeeds, response embedding fails
+	emb := &mockEmbedder{embeddings: map[string][]float32{
+		"hello": {1, 0, 0},
+	}}
+	p := NewProducer(emb, DefaultProducerConfig())
+	score := p.coherenceScore(context.Background(), ProduceInput{
+		Prompt: "hello", ResponseText: "unknown",
+	})
+	if score != 0 {
+		t.Errorf("expected 0 on second embed error, got %f", score)
+	}
+}
+
 func TestCoherenceScore_NilEmbedder(t *testing.T) {
 	p := NewProducer(nil, DefaultProducerConfig())
 	score := p.coherenceScore(context.Background(), ProduceInput{
