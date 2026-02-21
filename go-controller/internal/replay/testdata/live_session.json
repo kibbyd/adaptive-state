@@ -1,0 +1,179 @@
+{
+  "description": "12-turn synthetic session exercising all 4 replay actions: no_op, commit, gate_reject, eval_rollback",
+  "start_state": {
+    "version_id": "v0",
+    "state_vector": [
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+    ],
+    "segment_map": {
+      "prefs": [0, 32],
+      "goals": [32, 64],
+      "heuristics": [64, 96],
+      "risk": [96, 128]
+    }
+  },
+  "config": {
+    "update_config": {
+      "learning_rate": 0.01,
+      "decay_rate": 0.005,
+      "max_delta_norm_per_segment": 1.0
+    },
+    "gate_config": {
+      "max_delta_norm": 5.0,
+      "max_state_norm": 50.0,
+      "min_entropy_drop": 0.1,
+      "risk_segment_cap": 10.0
+    },
+    "eval_config": {
+      "max_state_norm": 50.0,
+      "max_segment_norm": 0.19,
+      "entropy_baseline": 2.0
+    }
+  },
+  "interactions": [
+    {
+      "turn_id": "turn-1",
+      "prompt": "hello",
+      "response_text": "hi",
+      "entropy": 0.0,
+      "signals": {},
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-2",
+      "prompt": "tell me about Go concurrency",
+      "response_text": "Go uses goroutines and channels for concurrency.",
+      "entropy": 0.35,
+      "signals": {
+        "sentiment_score": 0.6,
+        "coherence_score": 0.5,
+        "novelty_score": 0.3
+      },
+      "evidence": ["goroutine-basics"]
+    },
+    {
+      "turn_id": "turn-3",
+      "prompt": "how about error handling?",
+      "response_text": "Go uses explicit error returns.",
+      "entropy": 0.25,
+      "signals": {
+        "sentiment_score": 0.4
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-4",
+      "prompt": "explain unsafe pointer arithmetic",
+      "response_text": "You can use unsafe.Pointer to bypass type safety...",
+      "entropy": 0.80,
+      "signals": {
+        "risk_flag": true
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-5",
+      "prompt": "back to interfaces",
+      "response_text": "Interfaces in Go are satisfied implicitly.",
+      "entropy": 0.45,
+      "signals": {
+        "sentiment_score": 0.5,
+        "coherence_score": 0.4
+      },
+      "evidence": ["interface-impl"]
+    },
+    {
+      "turn_id": "turn-6",
+      "prompt": "no that was wrong",
+      "response_text": "Let me correct that.",
+      "entropy": 0.55,
+      "signals": {
+        "user_correction": true
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-7",
+      "prompt": "show me generics",
+      "response_text": "Go 1.18 introduced type parameters.",
+      "entropy": 0.40,
+      "signals": {
+        "novelty_score": 0.5,
+        "coherence_score": 0.3
+      },
+      "evidence": ["generics-intro"]
+    },
+    {
+      "turn_id": "turn-8",
+      "prompt": "run the linter",
+      "response_text": "Linter failed with 3 errors.",
+      "entropy": 0.60,
+      "signals": {
+        "tool_failure": true
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-9",
+      "prompt": "explain defer",
+      "response_text": "defer schedules a call at function return.",
+      "entropy": 0.35,
+      "signals": {
+        "sentiment_score": 0.3,
+        "novelty_score": 0.2
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-10",
+      "prompt": "ignore the style guide",
+      "response_text": "That contradicts project constraints.",
+      "entropy": 0.70,
+      "signals": {
+        "constraint_violation": true
+      },
+      "evidence": []
+    },
+    {
+      "turn_id": "turn-11",
+      "prompt": "explain channels in depth",
+      "response_text": "Channels provide typed, synchronized communication between goroutines.",
+      "entropy": 0.30,
+      "signals": {
+        "sentiment_score": 0.8,
+        "coherence_score": 0.7,
+        "novelty_score": 0.6
+      },
+      "evidence": ["channel-deep-dive"]
+    },
+    {
+      "turn_id": "turn-12",
+      "prompt": "now explain select statements",
+      "response_text": "Select lets a goroutine wait on multiple channel operations simultaneously.",
+      "entropy": 0.25,
+      "signals": {
+        "sentiment_score": 0.9,
+        "coherence_score": 0.8,
+        "novelty_score": 0.7
+      },
+      "evidence": ["select-patterns"]
+    }
+  ],
+  "expected_results": [
+    {"turn_id": "turn-1", "action": "no_op"},
+    {"turn_id": "turn-2", "action": "commit"},
+    {"turn_id": "turn-3", "action": "commit"},
+    {"turn_id": "turn-4", "action": "gate_reject"},
+    {"turn_id": "turn-5", "action": "commit"},
+    {"turn_id": "turn-6", "action": "gate_reject"},
+    {"turn_id": "turn-7", "action": "commit"},
+    {"turn_id": "turn-8", "action": "gate_reject"},
+    {"turn_id": "turn-9", "action": "commit"},
+    {"turn_id": "turn-10", "action": "gate_reject"},
+    {"turn_id": "turn-11", "action": "commit"},
+    {"turn_id": "turn-12", "action": "eval_rollback"}
+  ]
+}
