@@ -85,11 +85,13 @@ All source files use `#region` / `#endregion` markers. Regions are stable identi
 
 Triple-gated evidence retrieval orchestrated from Go:
 
-| Gate | Location | Check |
-|---|---|---|
-| Gate 1 — Confidence | Go (Retriever) | Entropy > threshold → proceed |
-| Gate 2 — Similarity | Python (ChromaDB) | Cosine similarity > threshold |
-| Gate 3 — Consistency | Go (Retriever) | Non-empty, length limit, no duplicate IDs |
+| Gate | Location | Check | Default |
+|---|---|---|---|
+| Gate 1 — Confidence | Go (Retriever) | Entropy > threshold → proceed | **Bypassed** (`AlwaysRetrieve=true`) |
+| Gate 2 — Similarity | Python (ChromaDB) | Cosine similarity > threshold | Primary filter (threshold 0.3) |
+| Gate 3 — Consistency | Go (Retriever) | Non-empty, length limit, no duplicate IDs | Always active |
+
+**Gate 1 bypass**: `AlwaysRetrieve` (default `true`) skips the entropy check. Low-entropy recall prompts ("what did we talk about") were missing stored evidence because Gate 1 blocked retrieval. Gate 2 similarity is sufficient — ChromaDB search cost is trivial. Set `AlwaysRetrieve=false` to restore the original entropy-gated behavior.
 
 Evidence flow: Go calls Generate (get entropy) → Retriever.Retrieve() → re-Generate with evidence → StoreEvidence.
 
@@ -360,4 +362,4 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 **Known Issues**:
 - Go-side gRPC timeouts (30s generate, 15s search, 10s store) can be tight depending on model and prompt length
 - `phi4-mini` occasionally appends stored Q&A evidence verbatim into response (evidence injection formatting)
-- Turn 5 ("what did we talk about") — model has no memory of prior turns within a single REPL session (evidence stored but not retrieved due to low entropy on simple prompt)
+- ~~Turn 5 recall gap~~ — Fixed: `AlwaysRetrieve=true` bypasses Gate 1 entropy check, allowing recall prompts to retrieve stored evidence
