@@ -147,7 +147,7 @@ func main() {
 		fmt.Printf("\n%s\n\n", result.Text)
 
 		// Step 4: Store this interaction as evidence for future retrieval
-		storeText := fmt.Sprintf("Q: %s\nA: %s", prompt, result.Text)
+		storeText := prompt
 		metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f}`, turnID, result.Entropy)
 		ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
 		_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
