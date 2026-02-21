@@ -184,10 +184,39 @@ func main() {
 			current, updateResult.NewState, sigs, updateResult.Metrics, result.Entropy,
 		)
 
+		// Build gate record for provenance logging (used by all 3 decision paths)
+		gateRecord := logging.GateRecord{
+			TurnID:   turnID,
+			Prompt:   prompt,
+			Response: result.Text,
+			Entropy:  result.Entropy,
+			Signals: logging.GateRecordSignals{
+				SentimentScore:      sigs.SentimentScore,
+				CoherenceScore:      sigs.CoherenceScore,
+				NoveltyScore:        sigs.NoveltyScore,
+				RiskFlag:            sigs.RiskFlag,
+				UserCorrection:      sigs.UserCorrection,
+				ToolFailure:         sigs.ToolFailure,
+				ConstraintViolation: sigs.ConstraintViolation,
+			},
+			DeltaNorm:     updateResult.Metrics.DeltaNorm,
+			SegmentsHit:   updateResult.Metrics.SegmentsHit,
+			Thresholds: logging.GateRecordThresholds{
+				MaxDeltaNorm:   gate.DefaultGateConfig().MaxDeltaNorm,
+				MaxStateNorm:   gate.DefaultGateConfig().MaxStateNorm,
+				RiskSegmentCap: gate.DefaultGateConfig().RiskSegmentCap,
+				MaxSegmentNorm: eval.DefaultEvalConfig().MaxSegmentNorm,
+			},
+			GateAction:    gateDecision.Action,
+			GateSoftScore: gateDecision.SoftScore,
+			GateVetoed:    gateDecision.Vetoed,
+			GateReason:    gateDecision.Reason,
+		}
+		signalsJSON, _ := json.Marshal(gateRecord)
+
 		if gateDecision.Action == "reject" {
 			// Gate rejected: log rejection, keep old state, continue
 			log.Printf("[%s] gate rejected: %s", turnID, gateDecision.Reason)
-			signalsJSON, _ := json.Marshal(updateCtx)
 			_ = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
 				VersionID:    current.VersionID,
 				TriggerType:  "user_turn",
@@ -217,7 +246,6 @@ func main() {
 			if rbErr := store.Rollback(current.VersionID); rbErr != nil {
 				log.Printf("[%s] rollback error: %v", turnID, rbErr)
 			}
-			signalsJSON, _ := json.Marshal(updateCtx)
 			_ = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
 				VersionID:    updateResult.NewState.VersionID,
 				TriggerType:  "user_turn",
@@ -233,7 +261,6 @@ func main() {
 		}
 
 		// Step 9: Eval passed — state stays committed. Log provenance.
-		signalsJSON, _ := json.Marshal(updateCtx)
 		reason := fmt.Sprintf("gate: %s | eval: %s", gateDecision.Reason, evalResult.Reason)
 		err = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
 			VersionID:    updateResult.NewState.VersionID,

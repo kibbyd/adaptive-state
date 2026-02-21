@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/replay"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/update"
@@ -47,18 +48,13 @@ type provenanceRow struct {
 	Decision    string
 }
 
-// signalsJSON mirrors the JSON structure stored in provenance_log.signals_json.
-type signalsJSON struct {
-	Prompt       string  `json:"prompt"`
-	Response     string  `json:"response"`
-	Entropy      float32 `json:"entropy"`
-	Sentiment    float32 `json:"sentiment_score"`
-	Coherence    float32 `json:"coherence_score"`
-	Novelty      float32 `json:"novelty_score"`
-	RiskFlag     bool    `json:"risk_flag"`
-	UserCorrect  bool    `json:"user_correction"`
-	ToolFail     bool    `json:"tool_failure"`
-	Constraint   bool    `json:"constraint_violation"`
+// legacySignalsJSON mirrors the legacy JSON structure from json.Marshal(updateCtx).
+// Legacy format uses Go default PascalCase keys: TurnID, Prompt, ResponseText, Entropy.
+type legacySignalsJSON struct {
+	TurnID       string  `json:"TurnID"`
+	Prompt       string  `json:"Prompt"`
+	ResponseText string  `json:"ResponseText"`
+	Entropy      float32 `json:"Entropy"`
 }
 
 func runDBMode(dbPath string) int {
@@ -137,24 +133,48 @@ func runDBMode(dbPath string) int {
 	return printComparison(results, dbDecisions, nil)
 }
 
-// toInteraction converts a provenance row to a replay Interaction using heuristic signals.
+// toInteraction converts a provenance row to a replay Interaction.
+// Tries GateRecord format first (full fidelity); falls back to legacy heuristics.
 func toInteraction(r provenanceRow) replay.Interaction {
 	inter := replay.Interaction{
 		TurnID: r.TurnID,
 	}
 
-	if r.SignalsJSON != "" {
-		var sig signalsJSON
-		if err := json.Unmarshal([]byte(r.SignalsJSON), &sig); err == nil {
-			inter.Prompt = sig.Prompt
-			inter.ResponseText = sig.Response
-			inter.Entropy = sig.Entropy
-			inter.Signals = heuristicSignals(sig)
-			return inter
-		}
+	if r.SignalsJSON == "" {
+		return inter
 	}
 
-	// Fallback: minimal signals
+	// Try GateRecord format first (new full-fidelity logging).
+	// Discriminator: GateRecord has "turn_id" (snake_case), legacy has "TurnID" (PascalCase).
+	var gr logging.GateRecord
+	if err := json.Unmarshal([]byte(r.SignalsJSON), &gr); err == nil && gr.TurnID != "" {
+		inter.TurnID = gr.TurnID
+		inter.Prompt = gr.Prompt
+		inter.ResponseText = gr.Response
+		inter.Entropy = gr.Entropy
+		inter.Signals = update.Signals{
+			SentimentScore:      gr.Signals.SentimentScore,
+			CoherenceScore:      gr.Signals.CoherenceScore,
+			NoveltyScore:        gr.Signals.NoveltyScore,
+			RiskFlag:            gr.Signals.RiskFlag,
+			UserCorrection:      gr.Signals.UserCorrection,
+			ToolFailure:         gr.Signals.ToolFailure,
+			ConstraintViolation: gr.Signals.ConstraintViolation,
+		}
+		return inter
+	}
+
+	// Legacy format: heuristic reconstruction from json.Marshal(UpdateContext)
+	var legacy legacySignalsJSON
+	if err := json.Unmarshal([]byte(r.SignalsJSON), &legacy); err == nil && legacy.Prompt != "" {
+		inter.TurnID = legacy.TurnID
+		inter.Prompt = legacy.Prompt
+		inter.ResponseText = legacy.ResponseText
+		inter.Entropy = legacy.Entropy
+		inter.Signals = heuristicSignals(legacy)
+		return inter
+	}
+
 	return inter
 }
 
@@ -162,29 +182,23 @@ func toInteraction(r provenanceRow) replay.Interaction {
 
 // #region heuristic-signals
 
-// heuristicSignals extracts update.Signals from parsed provenance JSON.
-// If explicit signal fields are present, use them; otherwise approximate.
-func heuristicSignals(sig signalsJSON) update.Signals {
-	s := update.Signals{
-		SentimentScore:      sig.Sentiment,
-		CoherenceScore:      sig.Coherence,
-		NoveltyScore:        sig.Novelty,
-		RiskFlag:            sig.RiskFlag,
-		UserCorrection:      sig.UserCorrect,
-		ToolFailure:         sig.ToolFail,
-		ConstraintViolation: sig.Constraint,
-	}
+// heuristicSignals approximates update.Signals from legacy provenance data.
+// Legacy rows only stored UpdateContext (prompt, response, entropy) — no signal values.
+func heuristicSignals(legacy legacySignalsJSON) update.Signals {
+	var s update.Signals
 
-	// Heuristic approximations when explicit values are zero
-	if s.SentimentScore == 0 && sig.Response != "" {
-		wordCount := float32(len(strings.Fields(sig.Response)))
+	// Approximate sentiment from response word count
+	if legacy.ResponseText != "" {
+		wordCount := float32(len(strings.Fields(legacy.ResponseText)))
 		s.SentimentScore = wordCount / 100.0
 		if s.SentimentScore > 1.0 {
 			s.SentimentScore = 1.0
 		}
 	}
-	if s.NoveltyScore == 0 && sig.Entropy > 0 {
-		s.NoveltyScore = sig.Entropy
+
+	// Approximate novelty from entropy
+	if legacy.Entropy > 0 {
+		s.NoveltyScore = legacy.Entropy
 	}
 
 	return s
