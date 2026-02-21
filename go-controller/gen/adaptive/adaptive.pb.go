@@ -230,6 +230,282 @@ func (x *EmbedResponse) GetEmbedding() []float32 {
 	return nil
 }
 
+type SearchRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	QueryText           string                 `protobuf:"bytes,1,opt,name=query_text,json=queryText,proto3" json:"query_text,omitempty"`
+	QueryEmbedding      []float32              `protobuf:"fixed32,2,rep,packed,name=query_embedding,json=queryEmbedding,proto3" json:"query_embedding,omitempty"`
+	TopK                int32                  `protobuf:"varint,3,opt,name=top_k,json=topK,proto3" json:"top_k,omitempty"`
+	SimilarityThreshold float32                `protobuf:"fixed32,4,opt,name=similarity_threshold,json=similarityThreshold,proto3" json:"similarity_threshold,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *SearchRequest) Reset() {
+	*x = SearchRequest{}
+	mi := &file_adaptive_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchRequest) ProtoMessage() {}
+
+func (x *SearchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchRequest.ProtoReflect.Descriptor instead.
+func (*SearchRequest) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SearchRequest) GetQueryText() string {
+	if x != nil {
+		return x.QueryText
+	}
+	return ""
+}
+
+func (x *SearchRequest) GetQueryEmbedding() []float32 {
+	if x != nil {
+		return x.QueryEmbedding
+	}
+	return nil
+}
+
+func (x *SearchRequest) GetTopK() int32 {
+	if x != nil {
+		return x.TopK
+	}
+	return 0
+}
+
+func (x *SearchRequest) GetSimilarityThreshold() float32 {
+	if x != nil {
+		return x.SimilarityThreshold
+	}
+	return 0
+}
+
+type SearchResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	Score         float32                `protobuf:"fixed32,3,opt,name=score,proto3" json:"score,omitempty"`
+	MetadataJson  string                 `protobuf:"bytes,4,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchResult) Reset() {
+	*x = SearchResult{}
+	mi := &file_adaptive_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchResult) ProtoMessage() {}
+
+func (x *SearchResult) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchResult.ProtoReflect.Descriptor instead.
+func (*SearchResult) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SearchResult) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *SearchResult) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *SearchResult) GetScore() float32 {
+	if x != nil {
+		return x.Score
+	}
+	return 0
+}
+
+func (x *SearchResult) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type SearchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SearchResult        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchResponse) Reset() {
+	*x = SearchResponse{}
+	mi := &file_adaptive_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchResponse) ProtoMessage() {}
+
+func (x *SearchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchResponse.ProtoReflect.Descriptor instead.
+func (*SearchResponse) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SearchResponse) GetResults() []*SearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+type StoreEvidenceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
+	MetadataJson  string                 `protobuf:"bytes,2,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StoreEvidenceRequest) Reset() {
+	*x = StoreEvidenceRequest{}
+	mi := &file_adaptive_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StoreEvidenceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoreEvidenceRequest) ProtoMessage() {}
+
+func (x *StoreEvidenceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoreEvidenceRequest.ProtoReflect.Descriptor instead.
+func (*StoreEvidenceRequest) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StoreEvidenceRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *StoreEvidenceRequest) GetMetadataJson() string {
+	if x != nil {
+		return x.MetadataJson
+	}
+	return ""
+}
+
+type StoreEvidenceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StoreEvidenceResponse) Reset() {
+	*x = StoreEvidenceResponse{}
+	mi := &file_adaptive_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StoreEvidenceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StoreEvidenceResponse) ProtoMessage() {}
+
+func (x *StoreEvidenceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StoreEvidenceResponse.ProtoReflect.Descriptor instead.
+func (*StoreEvidenceResponse) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *StoreEvidenceResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 var File_adaptive_proto protoreflect.FileDescriptor
 
 const file_adaptive_proto_rawDesc = "" +
@@ -246,10 +522,30 @@ const file_adaptive_proto_rawDesc = "" +
 	"\fEmbedRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"-\n" +
 	"\rEmbedResponse\x12\x1c\n" +
-	"\tembedding\x18\x01 \x03(\x02R\tembedding2\x8b\x01\n" +
+	"\tembedding\x18\x01 \x03(\x02R\tembedding\"\x9f\x01\n" +
+	"\rSearchRequest\x12\x1d\n" +
+	"\n" +
+	"query_text\x18\x01 \x01(\tR\tqueryText\x12'\n" +
+	"\x0fquery_embedding\x18\x02 \x03(\x02R\x0equeryEmbedding\x12\x13\n" +
+	"\x05top_k\x18\x03 \x01(\x05R\x04topK\x121\n" +
+	"\x14similarity_threshold\x18\x04 \x01(\x02R\x13similarityThreshold\"m\n" +
+	"\fSearchResult\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12\x14\n" +
+	"\x05score\x18\x03 \x01(\x02R\x05score\x12#\n" +
+	"\rmetadata_json\x18\x04 \x01(\tR\fmetadataJson\"B\n" +
+	"\x0eSearchResponse\x120\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.adaptive.SearchResultR\aresults\"O\n" +
+	"\x14StoreEvidenceRequest\x12\x12\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text\x12#\n" +
+	"\rmetadata_json\x18\x02 \x01(\tR\fmetadataJson\"'\n" +
+	"\x15StoreEvidenceResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id2\x9a\x02\n" +
 	"\fCodecService\x12A\n" +
 	"\bGenerate\x12\x19.adaptive.GenerateRequest\x1a\x1a.adaptive.GenerateResponse\x128\n" +
-	"\x05Embed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
+	"\x05Embed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponse\x12;\n" +
+	"\x06Search\x12\x17.adaptive.SearchRequest\x1a\x18.adaptive.SearchResponse\x12P\n" +
+	"\rStoreEvidence\x12\x1e.adaptive.StoreEvidenceRequest\x1a\x1f.adaptive.StoreEvidenceResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
 
 var (
 	file_adaptive_proto_rawDescOnce sync.Once
@@ -263,23 +559,33 @@ func file_adaptive_proto_rawDescGZIP() []byte {
 	return file_adaptive_proto_rawDescData
 }
 
-var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_adaptive_proto_goTypes = []any{
-	(*GenerateRequest)(nil),  // 0: adaptive.GenerateRequest
-	(*GenerateResponse)(nil), // 1: adaptive.GenerateResponse
-	(*EmbedRequest)(nil),     // 2: adaptive.EmbedRequest
-	(*EmbedResponse)(nil),    // 3: adaptive.EmbedResponse
+	(*GenerateRequest)(nil),       // 0: adaptive.GenerateRequest
+	(*GenerateResponse)(nil),      // 1: adaptive.GenerateResponse
+	(*EmbedRequest)(nil),          // 2: adaptive.EmbedRequest
+	(*EmbedResponse)(nil),         // 3: adaptive.EmbedResponse
+	(*SearchRequest)(nil),         // 4: adaptive.SearchRequest
+	(*SearchResult)(nil),          // 5: adaptive.SearchResult
+	(*SearchResponse)(nil),        // 6: adaptive.SearchResponse
+	(*StoreEvidenceRequest)(nil),  // 7: adaptive.StoreEvidenceRequest
+	(*StoreEvidenceResponse)(nil), // 8: adaptive.StoreEvidenceResponse
 }
 var file_adaptive_proto_depIdxs = []int32{
-	0, // 0: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
-	2, // 1: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
-	1, // 2: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
-	3, // 3: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
-	2, // [2:4] is the sub-list for method output_type
-	0, // [0:2] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	5, // 0: adaptive.SearchResponse.results:type_name -> adaptive.SearchResult
+	0, // 1: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
+	2, // 2: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
+	4, // 3: adaptive.CodecService.Search:input_type -> adaptive.SearchRequest
+	7, // 4: adaptive.CodecService.StoreEvidence:input_type -> adaptive.StoreEvidenceRequest
+	1, // 5: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
+	3, // 6: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
+	6, // 7: adaptive.CodecService.Search:output_type -> adaptive.SearchResponse
+	8, // 8: adaptive.CodecService.StoreEvidence:output_type -> adaptive.StoreEvidenceResponse
+	5, // [5:9] is the sub-list for method output_type
+	1, // [1:5] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_adaptive_proto_init() }
@@ -293,7 +599,7 @@ func file_adaptive_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_adaptive_proto_rawDesc), len(file_adaptive_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -16,6 +16,14 @@ type GenerateResult struct {
 	Entropy float32
 	Logits  []float32
 }
+
+// SearchResult holds a single result from a Search RPC call.
+type SearchResult struct {
+	ID           string
+	Text         string
+	Score        float32
+	MetadataJSON string
+}
 // #endregion types
 
 // #region client-struct
@@ -82,3 +90,42 @@ func (c *CodecClient) Embed(ctx context.Context, text string) ([]float32, error)
 	return resp.Embedding, nil
 }
 // #endregion embed
+
+// #region search
+// Search queries the evidence memory store via the Python service.
+func (c *CodecClient) Search(ctx context.Context, queryText string, topK int, similarityThreshold float32) ([]SearchResult, error) {
+	resp, err := c.client.Search(ctx, &pb.SearchRequest{
+		QueryText:           queryText,
+		TopK:                int32(topK),
+		SimilarityThreshold: similarityThreshold,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search rpc: %w", err)
+	}
+
+	results := make([]SearchResult, len(resp.Results))
+	for i, r := range resp.Results {
+		results[i] = SearchResult{
+			ID:           r.Id,
+			Text:         r.Text,
+			Score:        r.Score,
+			MetadataJSON: r.MetadataJson,
+		}
+	}
+	return results, nil
+}
+// #endregion search
+
+// #region store-evidence
+// StoreEvidence stores text as evidence in the Python-side memory store.
+func (c *CodecClient) StoreEvidence(ctx context.Context, text string, metadataJSON string) (string, error) {
+	resp, err := c.client.StoreEvidence(ctx, &pb.StoreEvidenceRequest{
+		Text:         text,
+		MetadataJson: metadataJSON,
+	})
+	if err != nil {
+		return "", fmt.Errorf("store evidence rpc: %w", err)
+	}
+	return resp.Id, nil
+}
+// #endregion store-evidence

@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CodecService_Generate_FullMethodName = "/adaptive.CodecService/Generate"
-	CodecService_Embed_FullMethodName    = "/adaptive.CodecService/Embed"
+	CodecService_Generate_FullMethodName      = "/adaptive.CodecService/Generate"
+	CodecService_Embed_FullMethodName         = "/adaptive.CodecService/Embed"
+	CodecService_Search_FullMethodName        = "/adaptive.CodecService/Search"
+	CodecService_StoreEvidence_FullMethodName = "/adaptive.CodecService/StoreEvidence"
 )
 
 // CodecServiceClient is the client API for CodecService service.
@@ -31,6 +33,8 @@ const (
 type CodecServiceClient interface {
 	Generate(ctx context.Context, in *GenerateRequest, opts ...grpc.CallOption) (*GenerateResponse, error)
 	Embed(ctx context.Context, in *EmbedRequest, opts ...grpc.CallOption) (*EmbedResponse, error)
+	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
+	StoreEvidence(ctx context.Context, in *StoreEvidenceRequest, opts ...grpc.CallOption) (*StoreEvidenceResponse, error)
 }
 
 type codecServiceClient struct {
@@ -61,6 +65,26 @@ func (c *codecServiceClient) Embed(ctx context.Context, in *EmbedRequest, opts .
 	return out, nil
 }
 
+func (c *codecServiceClient) Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchResponse)
+	err := c.cc.Invoke(ctx, CodecService_Search_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *codecServiceClient) StoreEvidence(ctx context.Context, in *StoreEvidenceRequest, opts ...grpc.CallOption) (*StoreEvidenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StoreEvidenceResponse)
+	err := c.cc.Invoke(ctx, CodecService_StoreEvidence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CodecServiceServer is the server API for CodecService service.
 // All implementations must embed UnimplementedCodecServiceServer
 // for forward compatibility.
@@ -69,6 +93,8 @@ func (c *codecServiceClient) Embed(ctx context.Context, in *EmbedRequest, opts .
 type CodecServiceServer interface {
 	Generate(context.Context, *GenerateRequest) (*GenerateResponse, error)
 	Embed(context.Context, *EmbedRequest) (*EmbedResponse, error)
+	Search(context.Context, *SearchRequest) (*SearchResponse, error)
+	StoreEvidence(context.Context, *StoreEvidenceRequest) (*StoreEvidenceResponse, error)
 	mustEmbedUnimplementedCodecServiceServer()
 }
 
@@ -84,6 +110,12 @@ func (UnimplementedCodecServiceServer) Generate(context.Context, *GenerateReques
 }
 func (UnimplementedCodecServiceServer) Embed(context.Context, *EmbedRequest) (*EmbedResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Embed not implemented")
+}
+func (UnimplementedCodecServiceServer) Search(context.Context, *SearchRequest) (*SearchResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Search not implemented")
+}
+func (UnimplementedCodecServiceServer) StoreEvidence(context.Context, *StoreEvidenceRequest) (*StoreEvidenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StoreEvidence not implemented")
 }
 func (UnimplementedCodecServiceServer) mustEmbedUnimplementedCodecServiceServer() {}
 func (UnimplementedCodecServiceServer) testEmbeddedByValue()                      {}
@@ -142,6 +174,42 @@ func _CodecService_Embed_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CodecService_Search_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodecServiceServer).Search(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodecService_Search_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodecServiceServer).Search(ctx, req.(*SearchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CodecService_StoreEvidence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StoreEvidenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodecServiceServer).StoreEvidence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodecService_StoreEvidence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodecServiceServer).StoreEvidence(ctx, req.(*StoreEvidenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CodecService_ServiceDesc is the grpc.ServiceDesc for CodecService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +224,14 @@ var CodecService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Embed",
 			Handler:    _CodecService_Embed_Handler,
+		},
+		{
+			MethodName: "Search",
+			Handler:    _CodecService_Search_Handler,
+		},
+		{
+			MethodName: "StoreEvidence",
+			Handler:    _CodecService_StoreEvidence_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

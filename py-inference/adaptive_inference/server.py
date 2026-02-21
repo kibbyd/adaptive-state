@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "proto"))
 import adaptive_pb2 as pb2
 import adaptive_pb2_grpc as pb2_grpc
 
+from .memory import MemoryStore
 from .service import InferenceService
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,9 @@ logger = logging.getLogger(__name__)
 class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
     """gRPC servicer that delegates to InferenceService."""
 
-    def __init__(self, inference_service: InferenceService):
+    def __init__(self, inference_service: InferenceService, memory_store: MemoryStore):
         self._service = inference_service
+        self._memory = memory_store
         self._loop = asyncio.new_event_loop()
 
     def Generate(self, request, context):
@@ -63,6 +65,54 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             return pb2.EmbedResponse()
+
+    def Search(self, request, context):
+        """Handle Search RPC — query the evidence memory store."""
+        logger.info("Search called: query=%s..., top_k=%d, threshold=%.2f",
+                     request.query_text[:50] if request.query_text else "",
+                     request.top_k, request.similarity_threshold)
+
+        try:
+            results = self._loop.run_until_complete(
+                self._memory.search(
+                    query_text=request.query_text,
+                    top_k=request.top_k if request.top_k > 0 else 5,
+                    threshold=request.similarity_threshold,
+                )
+            )
+            return pb2.SearchResponse(
+                results=[
+                    pb2.SearchResult(
+                        id=r.id,
+                        text=r.text,
+                        score=r.score,
+                        metadata_json=r.metadata_json,
+                    )
+                    for r in results
+                ]
+            )
+        except Exception as e:
+            logger.error("Search error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.SearchResponse()
+
+    def StoreEvidence(self, request, context):
+        """Handle StoreEvidence RPC — store text in the evidence memory."""
+        logger.info("StoreEvidence called: text=%s...", request.text[:50] if request.text else "")
+
+        try:
+            import json
+            metadata = json.loads(request.metadata_json) if request.metadata_json else {}
+            doc_id = self._loop.run_until_complete(
+                self._memory.store(text=request.text, metadata=metadata)
+            )
+            return pb2.StoreEvidenceResponse(id=doc_id)
+        except Exception as e:
+            logger.error("StoreEvidence error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.StoreEvidenceResponse()
 # #endregion grpc-servicer
 
 
@@ -75,8 +125,10 @@ def serve():
     model = os.environ.get("OLLAMA_MODEL", "qwen3:4b")
     ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
+    persist_dir = os.environ.get("MEMORY_PERSIST_DIR", "./chroma_data")
     inference = InferenceService(model=model, base_url=ollama_url)
-    servicer = CodecServiceServicer(inference)
+    memory = MemoryStore(persist_dir=persist_dir)
+    servicer = CodecServiceServicer(inference, memory)
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     pb2_grpc.add_CodecServiceServicer_to_server(servicer, server)

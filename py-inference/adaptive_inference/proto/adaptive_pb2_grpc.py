@@ -45,6 +45,16 @@ class CodecServiceStub(object):
                 request_serializer=adaptive__pb2.EmbedRequest.SerializeToString,
                 response_deserializer=adaptive__pb2.EmbedResponse.FromString,
                 _registered_method=True)
+        self.Search = channel.unary_unary(
+                '/adaptive.CodecService/Search',
+                request_serializer=adaptive__pb2.SearchRequest.SerializeToString,
+                response_deserializer=adaptive__pb2.SearchResponse.FromString,
+                _registered_method=True)
+        self.StoreEvidence = channel.unary_unary(
+                '/adaptive.CodecService/StoreEvidence',
+                request_serializer=adaptive__pb2.StoreEvidenceRequest.SerializeToString,
+                response_deserializer=adaptive__pb2.StoreEvidenceResponse.FromString,
+                _registered_method=True)
 
 
 class CodecServiceServicer(object):
@@ -63,6 +73,18 @@ class CodecServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def Search(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StoreEvidence(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CodecServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -75,6 +97,16 @@ def add_CodecServiceServicer_to_server(servicer, server):
                     servicer.Embed,
                     request_deserializer=adaptive__pb2.EmbedRequest.FromString,
                     response_serializer=adaptive__pb2.EmbedResponse.SerializeToString,
+            ),
+            'Search': grpc.unary_unary_rpc_method_handler(
+                    servicer.Search,
+                    request_deserializer=adaptive__pb2.SearchRequest.FromString,
+                    response_serializer=adaptive__pb2.SearchResponse.SerializeToString,
+            ),
+            'StoreEvidence': grpc.unary_unary_rpc_method_handler(
+                    servicer.StoreEvidence,
+                    request_deserializer=adaptive__pb2.StoreEvidenceRequest.FromString,
+                    response_serializer=adaptive__pb2.StoreEvidenceResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -132,6 +164,60 @@ class CodecService(object):
             '/adaptive.CodecService/Embed',
             adaptive__pb2.EmbedRequest.SerializeToString,
             adaptive__pb2.EmbedResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def Search(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/adaptive.CodecService/Search',
+            adaptive__pb2.SearchRequest.SerializeToString,
+            adaptive__pb2.SearchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StoreEvidence(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/adaptive.CodecService/StoreEvidence',
+            adaptive__pb2.StoreEvidenceRequest.SerializeToString,
+            adaptive__pb2.StoreEvidenceResponse.FromString,
             options,
             channel_credentials,
             insecure,

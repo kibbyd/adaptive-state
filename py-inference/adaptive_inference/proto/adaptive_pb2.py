@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x61\x64\x61ptive.proto\x12\x08\x61\x64\x61ptive\"I\n\x0fGenerateRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12\x14\n\x0cstate_vector\x18\x02 \x03(\x02\x12\x10\n\x08\x65vidence\x18\x03 \x03(\t\"A\n\x10GenerateResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0f\n\x07\x65ntropy\x18\x02 \x01(\x02\x12\x0e\n\x06logits\x18\x03 \x03(\x02\"\x1c\n\x0c\x45mbedRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\"\"\n\rEmbedResponse\x12\x11\n\tembedding\x18\x01 \x03(\x02\x32\x8b\x01\n\x0c\x43odecService\x12\x41\n\x08Generate\x12\x19.adaptive.GenerateRequest\x1a\x1a.adaptive.GenerateResponse\x12\x38\n\x05\x45mbed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0e\x61\x64\x61ptive.proto\x12\x08\x61\x64\x61ptive\"I\n\x0fGenerateRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\x12\x14\n\x0cstate_vector\x18\x02 \x03(\x02\x12\x10\n\x08\x65vidence\x18\x03 \x03(\t\"A\n\x10GenerateResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0f\n\x07\x65ntropy\x18\x02 \x01(\x02\x12\x0e\n\x06logits\x18\x03 \x03(\x02\"\x1c\n\x0c\x45mbedRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\"\"\n\rEmbedResponse\x12\x11\n\tembedding\x18\x01 \x03(\x02\"i\n\rSearchRequest\x12\x12\n\nquery_text\x18\x01 \x01(\t\x12\x17\n\x0fquery_embedding\x18\x02 \x03(\x02\x12\r\n\x05top_k\x18\x03 \x01(\x05\x12\x1c\n\x14similarity_threshold\x18\x04 \x01(\x02\"N\n\x0cSearchResult\x12\n\n\x02id\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\r\n\x05score\x18\x03 \x01(\x02\x12\x15\n\rmetadata_json\x18\x04 \x01(\t\"9\n\x0eSearchResponse\x12\'\n\x07results\x18\x01 \x03(\x0b\x32\x16.adaptive.SearchResult\";\n\x14StoreEvidenceRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x15\n\rmetadata_json\x18\x02 \x01(\t\"#\n\x15StoreEvidenceResponse\x12\n\n\x02id\x18\x01 \x01(\t2\x9a\x02\n\x0c\x43odecService\x12\x41\n\x08Generate\x12\x19.adaptive.GenerateRequest\x1a\x1a.adaptive.GenerateResponse\x12\x38\n\x05\x45mbed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponse\x12;\n\x06Search\x12\x17.adaptive.SearchRequest\x1a\x18.adaptive.SearchResponse\x12P\n\rStoreEvidence\x12\x1e.adaptive.StoreEvidenceRequest\x1a\x1f.adaptive.StoreEvidenceResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -40,6 +40,16 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_EMBEDREQUEST']._serialized_end=198
   _globals['_EMBEDRESPONSE']._serialized_start=200
   _globals['_EMBEDRESPONSE']._serialized_end=234
-  _globals['_CODECSERVICE']._serialized_start=237
-  _globals['_CODECSERVICE']._serialized_end=376
+  _globals['_SEARCHREQUEST']._serialized_start=236
+  _globals['_SEARCHREQUEST']._serialized_end=341
+  _globals['_SEARCHRESULT']._serialized_start=343
+  _globals['_SEARCHRESULT']._serialized_end=421
+  _globals['_SEARCHRESPONSE']._serialized_start=423
+  _globals['_SEARCHRESPONSE']._serialized_end=480
+  _globals['_STOREEVIDENCEREQUEST']._serialized_start=482
+  _globals['_STOREEVIDENCEREQUEST']._serialized_end=541
+  _globals['_STOREEVIDENCERESPONSE']._serialized_start=543
+  _globals['_STOREEVIDENCERESPONSE']._serialized_end=578
+  _globals['_CODECSERVICE']._serialized_start=581
+  _globals['_CODECSERVICE']._serialized_end=863
 # @@protoc_insertion_point(module_scope)

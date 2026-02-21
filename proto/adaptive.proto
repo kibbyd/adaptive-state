@@ -8,6 +8,8 @@ option go_package = "github.com/danielpatrickdp/adaptive-state/go-controller/gen
 service CodecService {
   rpc Generate(GenerateRequest) returns (GenerateResponse);
   rpc Embed(EmbedRequest) returns (EmbedResponse);
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc StoreEvidence(StoreEvidenceRequest) returns (StoreEvidenceResponse);
 }
 // #endregion service-definition
 
@@ -30,5 +32,32 @@ message EmbedRequest {
 
 message EmbedResponse {
   repeated float embedding = 1;
+}
+
+message SearchRequest {
+  string query_text = 1;
+  repeated float query_embedding = 2;
+  int32 top_k = 3;
+  float similarity_threshold = 4;
+}
+
+message SearchResult {
+  string id = 1;
+  string text = 2;
+  float score = 3;
+  string metadata_json = 4;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+message StoreEvidenceRequest {
+  string text = 1;
+  string metadata_json = 2;
+}
+
+message StoreEvidenceResponse {
+  string id = 1;
 }
 // #endregion messages
