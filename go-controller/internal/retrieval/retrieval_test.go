@@ -1,8 +1,40 @@
 package retrieval
 
 import (
+	"context"
+	"errors"
 	"testing"
+
+	pb "github.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptive"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/codec"
+	"google.golang.org/grpc"
 )
+
+// #region mock
+type mockCodecService struct {
+	pb.CodecServiceClient
+
+	searchResp *pb.SearchResponse
+	searchErr  error
+}
+
+func (m *mockCodecService) Generate(_ context.Context, _ *pb.GenerateRequest, _ ...grpc.CallOption) (*pb.GenerateResponse, error) {
+	return nil, nil
+}
+
+func (m *mockCodecService) Embed(_ context.Context, _ *pb.EmbedRequest, _ ...grpc.CallOption) (*pb.EmbedResponse, error) {
+	return nil, nil
+}
+
+func (m *mockCodecService) Search(_ context.Context, _ *pb.SearchRequest, _ ...grpc.CallOption) (*pb.SearchResponse, error) {
+	return m.searchResp, m.searchErr
+}
+
+func (m *mockCodecService) StoreEvidence(_ context.Context, _ *pb.StoreEvidenceRequest, _ ...grpc.CallOption) (*pb.StoreEvidenceResponse, error) {
+	return nil, nil
+}
+
+// #endregion mock
 
 // #region gate1-tests
 func TestGate1_LowEntropy(t *testing.T) {
@@ -124,3 +156,142 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 // #endregion gate3-tests
+
+// #region retriever-tests
+func TestNewRetriever(t *testing.T) {
+	cc := codec.NewCodecClientWithService(&mockCodecService{})
+	r := NewRetriever(cc, DefaultConfig())
+	if r == nil {
+		t.Fatal("expected non-nil retriever")
+	}
+}
+
+func TestRetrieve_Gate1Fail(t *testing.T) {
+	mock := &mockCodecService{}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	cfg.EntropyThreshold = 2.0
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "prompt", 0.5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Gate1Passed {
+		t.Error("expected gate1 to fail")
+	}
+	if result.Gate2Count != 0 {
+		t.Error("expected no gate2 results when gate1 fails")
+	}
+}
+
+func TestRetrieve_SearchError(t *testing.T) {
+	mock := &mockCodecService{
+		searchErr: errors.New("search broken"),
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	cfg.EntropyThreshold = 0.1
+	r := NewRetriever(cc, cfg)
+
+	_, err := r.Retrieve(context.Background(), "prompt", 1.0)
+	if err == nil {
+		t.Fatal("expected error from search")
+	}
+	if !errors.Is(err, mock.searchErr) {
+		t.Errorf("expected wrapped search error, got: %v", err)
+	}
+}
+
+func TestRetrieve_Gate2ZeroResults(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{Results: []*pb.SearchResult{}},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	cfg.EntropyThreshold = 0.1
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "prompt", 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Gate1Passed {
+		t.Error("expected gate1 to pass")
+	}
+	if result.Gate2Count != 0 {
+		t.Errorf("expected 0 gate2 results, got %d", result.Gate2Count)
+	}
+	if result.Reason != "gate2: no results above similarity threshold" {
+		t.Errorf("unexpected reason: %q", result.Reason)
+	}
+}
+
+func TestRetrieve_Gate3AllFiltered(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{
+			Results: []*pb.SearchResult{
+				{Id: "1", Text: "", Score: 0.9},
+				{Id: "2", Text: "", Score: 0.8},
+			},
+		},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	cfg.EntropyThreshold = 0.1
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "prompt", 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Gate2Count != 2 {
+		t.Errorf("expected 2 gate2 results, got %d", result.Gate2Count)
+	}
+	if result.Gate3Count != 0 {
+		t.Errorf("expected 0 gate3 results, got %d", result.Gate3Count)
+	}
+	if result.Reason != "gate3: all results failed consistency check" {
+		t.Errorf("unexpected reason: %q", result.Reason)
+	}
+}
+
+func TestRetrieve_FullSuccess(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{
+			Results: []*pb.SearchResult{
+				{Id: "a", Text: "evidence alpha", Score: 0.95, MetadataJson: `{"src":"test"}`},
+				{Id: "b", Text: "evidence beta", Score: 0.85, MetadataJson: ""},
+			},
+		},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	cfg.EntropyThreshold = 0.1
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "prompt", 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.Gate1Passed {
+		t.Error("expected gate1 to pass")
+	}
+	if result.Gate2Count != 2 {
+		t.Errorf("expected 2 gate2 results, got %d", result.Gate2Count)
+	}
+	if result.Gate3Count != 2 {
+		t.Errorf("expected 2 gate3 results, got %d", result.Gate3Count)
+	}
+	if len(result.Retrieved) != 2 {
+		t.Fatalf("expected 2 retrieved, got %d", len(result.Retrieved))
+	}
+	if result.Retrieved[0].ID != "a" {
+		t.Errorf("expected first result ID 'a', got %q", result.Retrieved[0].ID)
+	}
+	if result.Retrieved[0].Text != "evidence alpha" {
+		t.Errorf("expected first result text 'evidence alpha', got %q", result.Retrieved[0].Text)
+	}
+}
+
+// #endregion retriever-tests

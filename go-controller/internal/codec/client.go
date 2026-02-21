@@ -46,6 +46,12 @@ func NewCodecClient(addr string) (*CodecClient, error) {
 		client: pb.NewCodecServiceClient(conn),
 	}, nil
 }
+// NewCodecClientWithService creates a CodecClient with an injected service implementation.
+// Used for testing without a real gRPC connection.
+func NewCodecClientWithService(svc pb.CodecServiceClient) *CodecClient {
+	return &CodecClient{client: svc}
+}
+
 // #endregion constructor
 
 // #region close
