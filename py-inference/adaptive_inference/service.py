@@ -1,6 +1,7 @@
 """InferenceService — orchestrates Ollama calls with state conditioning."""
 
 import math
+import re
 from dataclasses import dataclass
 
 from . import ollama_client
@@ -79,11 +80,13 @@ class InferenceService:
         return "\n".join(lines)
 
     def _estimate_entropy(self, result: dict) -> float:
-        """Phase 1 entropy proxy — derived from eval metrics if available."""
-        # Ollama may return eval_count and eval_duration
-        eval_count = result.get("eval_count", 0)
-        if eval_count > 0:
-            # Normalized to [0,1]: 200 tokens → 0.5 entropy
-            return min(float(eval_count) / 400.0, 1.0)
+        """Phase 1 entropy proxy — visible response token count, ignoring <think> blocks."""
+        text = result.get("response", "")
+        # Strip thinking tokens from reasoning models (e.g. deepseek-r1)
+        visible = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+        token_count = len(visible.split())
+        if token_count > 0:
+            # Normalized to [0,1]: 200 visible words → 0.5 entropy
+            return min(float(token_count) / 400.0, 1.0)
         return 0.0
 # #endregion service
