@@ -178,3 +178,98 @@ func TestGateSoftScoreRange(t *testing.T) {
 		t.Fatalf("soft score %.4f out of [0, 1] range", decision.SoftScore)
 	}
 }
+
+func TestSoftScoreNonZeroOldLowEntropy(t *testing.T) {
+	// Non-zero old state + entropy < 1.0 → hits oldNorm > 0 branch with entropy reward
+	old := makeState(map[int]float32{0: 1.0, 1: 1.0})
+	proposed := makeState(map[int]float32{0: 1.0, 1: 1.0})
+	metrics := update.Metrics{DeltaNorm: 0, SegmentsHit: []string{}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.3, 0.1)
+
+	// Should get entropy component (0.4 * 0.7 = 0.28) + delta 0.3 + segments 0.3 = 0.88
+	if score < 0.8 || score > 1.0 {
+		t.Errorf("expected score ~0.88, got %.4f", score)
+	}
+}
+
+func TestSoftScoreNonZeroOldHighEntropy(t *testing.T) {
+	// Non-zero old state + entropy >= 1.0 → hits oldNorm > 0 but skips entropy reward
+	old := makeState(map[int]float32{0: 1.0, 1: 1.0})
+	proposed := makeState(map[int]float32{0: 1.0, 1: 1.0})
+	metrics := update.Metrics{DeltaNorm: 0, SegmentsHit: []string{}}
+
+	score := computeSoftScore(old, proposed, metrics, 1.5, 0.1)
+
+	// No entropy component + delta 0.3 + segments 0.3 = 0.6
+	if score < 0.55 || score > 0.65 {
+		t.Errorf("expected score ~0.6, got %.4f", score)
+	}
+}
+
+func TestSoftScoreSmallDelta(t *testing.T) {
+	// deltaNorm > 0 but < 1.0 → partial delta stability score
+	old := makeState(nil)
+	proposed := makeState(nil)
+	metrics := update.Metrics{DeltaNorm: 0.5, SegmentsHit: []string{}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.5, 0.1)
+
+	// neutral entropy 0.2 + delta 0.3*(1-0.5)=0.15 + segments 0.3 = 0.65
+	if score < 0.6 || score > 0.7 {
+		t.Errorf("expected score ~0.65, got %.4f", score)
+	}
+}
+
+func TestSoftScoreLargeDelta(t *testing.T) {
+	// deltaNorm >= 1.0 → no delta stability score
+	old := makeState(nil)
+	proposed := makeState(nil)
+	metrics := update.Metrics{DeltaNorm: 2.0, SegmentsHit: []string{}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.5, 0.1)
+
+	// neutral entropy 0.2 + delta 0 + segments 0.3 = 0.5
+	if score < 0.45 || score > 0.55 {
+		t.Errorf("expected score ~0.5, got %.4f", score)
+	}
+}
+
+func TestSoftScoreOneSegmentHit(t *testing.T) {
+	old := makeState(nil)
+	proposed := makeState(nil)
+	metrics := update.Metrics{DeltaNorm: 0, SegmentsHit: []string{"prefs"}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.5, 0.1)
+
+	// neutral entropy 0.2 + delta 0.3 + 1 segment 0.2 = 0.7
+	if score < 0.65 || score > 0.75 {
+		t.Errorf("expected score ~0.7, got %.4f", score)
+	}
+}
+
+func TestSoftScoreTwoSegmentsHit(t *testing.T) {
+	old := makeState(nil)
+	proposed := makeState(nil)
+	metrics := update.Metrics{DeltaNorm: 0, SegmentsHit: []string{"prefs", "goals"}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.5, 0.1)
+
+	// neutral entropy 0.2 + delta 0.3 + 2 segments 0.1 = 0.6
+	if score < 0.55 || score > 0.65 {
+		t.Errorf("expected score ~0.6, got %.4f", score)
+	}
+}
+
+func TestSoftScoreThreeOrMoreSegmentsHit(t *testing.T) {
+	old := makeState(nil)
+	proposed := makeState(nil)
+	metrics := update.Metrics{DeltaNorm: 0, SegmentsHit: []string{"prefs", "goals", "heuristics"}}
+
+	score := computeSoftScore(old, proposed, metrics, 0.5, 0.1)
+
+	// neutral entropy 0.2 + delta 0.3 + 3 segments 0 = 0.5
+	if score < 0.45 || score > 0.55 {
+		t.Errorf("expected score ~0.5, got %.4f", score)
+	}
+}
