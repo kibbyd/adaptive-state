@@ -174,6 +174,54 @@ Decay only applies to segments NOT reinforced this turn (no mapped signal > 0). 
 4. Compute metrics (per-segment delta/decay norms, total delta norm)
 5. Decision: `"commit"` if total delta > 0, else `"no_op"`
 
+## Full Replay Harness (Phase 5)
+
+In-memory replay system that mirrors the main loop pipeline without DB writes.
+
+### ReplayConfig
+
+Bundles all three stage configs into one struct:
+
+| Field | Type | Source |
+|---|---|---|
+| `UpdateConfig` | `update.UpdateConfig` | Learning rate, decay, delta clamp |
+| `GateConfig` | `gate.GateConfig` | Delta/state norm caps, risk cap |
+| `EvalConfig` | `eval.EvalConfig` | State/segment norm bounds |
+
+`DefaultReplayConfig()` returns defaults from all three packages.
+
+### Replay Pipeline (per interaction)
+
+```
+1. update.Update(current, ctx, signals, evidence, config.UpdateConfig)
+2. If no_op → record, keep current state, continue
+3. gate.Evaluate(current, proposed, signals, metrics, entropy)
+4. If reject → record "gate_reject", keep current state, continue
+5. eval.Run(proposed, entropy)
+6. If !passed → record "eval_rollback", keep current state, continue
+7. Passed → record "commit", advance current = proposed
+```
+
+### Result Actions
+
+| Action | Meaning | State Effect |
+|---|---|---|
+| `commit` | All stages passed | Advance to proposed |
+| `gate_reject` | Hard veto triggered | Keep current |
+| `eval_rollback` | Norm bounds exceeded | Keep current |
+| `no_op` | No state change from update | Keep current |
+
+### ReplaySummary
+
+`Summarize(results, finalState)` returns aggregate counts: TotalTurns, Commits, GateRejects, EvalRollbacks, NoOps, and the final StateRecord.
+
+### Key Properties
+
+- **In-memory only**: No DB commits, rollbacks, or provenance writes
+- **No Store dependency**: Takes a `StateRecord` directly as starting state
+- **No error return**: All operations are in-memory and infallible
+- **Deterministic**: Same inputs produce same outputs
+
 ## Communication
 
 - Go ↔ Python: gRPC on port 50051 (configurable via `CODEC_ADDR` / `GRPC_PORT`)
