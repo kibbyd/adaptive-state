@@ -23,7 +23,7 @@ class EmbedResult:
 class InferenceService:
     """Orchestrates inference calls, injecting state context into prompts."""
 
-    def __init__(self, model: str = ollama_client.DEFAULT_MODEL, base_url: str = ollama_client.DEFAULT_BASE_URL, embed_model: str = "qwen2.5-coder:7b"):
+    def __init__(self, model: str = ollama_client.DEFAULT_MODEL, base_url: str = ollama_client.DEFAULT_BASE_URL, embed_model: str = "phi4-mini"):
         self.model = model
         self.base_url = base_url
         self.embed_model = embed_model
