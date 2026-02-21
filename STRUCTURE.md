@@ -95,6 +95,27 @@ Triple-gated evidence retrieval orchestrated from Go:
 
 Evidence flow: Go calls Generate (get entropy) → Retriever.Retrieve() → re-Generate with evidence → StoreEvidence.
 
+## Conversation Context (Multi-Turn Continuity)
+
+Ollama's `context` token array is threaded through the full pipeline to give the model native conversational memory:
+
+```
+Go REPL (var ollamaCtx []int64)
+  → gRPC GenerateRequest.context
+    → Python servicer → InferenceService.generate(context=...)
+      → ollama_client.generate(context=...)
+        → Ollama /api/generate payload["context"]
+      ← Ollama response["context"]
+    ← GenerateResult.context
+  ← gRPC GenerateResponse.context
+← result.Context → ollamaCtx (updated for next turn)
+```
+
+- Context is session-scoped: initialized as `nil`, updated after each Generate call (both first-pass and re-generate with evidence)
+- Proto field: `repeated int64 context = 4` on both GenerateRequest and GenerateResponse
+- When context is nil/empty, Ollama treats the request as a fresh conversation
+- Context accumulates token history — grows with each turn but is managed by Ollama internally
+
 ChromaDB persistence: configurable via `MEMORY_PERSIST_DIR` (default: `./chroma_data`).
 
 ## Gate + Rollback (Phase 3)
@@ -305,7 +326,12 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 - Added heuristic signal producers (SentimentScore, CoherenceScore, NoveltyScore, RiskFlag, UserCorrection)
 - Mock injection patterns: `NewStoreWithDB`, `NewCodecClientWithService`, `mockEmbedder`
 
-### Live Integration Testing (current)
+### Conversation Context
+- Added Ollama `context` token array to proto, Python service, Go client, and REPL
+- Multi-turn continuity: model carries dialogue history natively across turns
+- Two layers of memory: Ollama context (short-term dialogue) + ChromaDB evidence (long-term retrieval)
+
+### Live Integration Testing
 - First end-to-end test of Go REPL → gRPC → Python → Ollama pipeline
 - Discovered and fixed 6 issues:
   1. **Embed 501**: `qwen3:4b` lacks `/api/embed` → added `EMBED_MODEL` env var
@@ -352,11 +378,11 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 - **Evidence retrieval** activated on turn 4 (entropy 0.82 > threshold 0.5), injected 5 evidence items
 - **Provenance log** captured all 22 decisions with reasons
 
-**Pipeline per turn**: Generate → Retrieve (triple-gated) → Re-generate with evidence → StoreEvidence → Signals → Update → Gate → Eval → Commit/Reject
+**Pipeline per turn**: Generate (with context) → Retrieve (triple-gated) → Re-generate with evidence + context → StoreEvidence → Signals → Update → Gate → Eval → Commit/Reject
 
 ## Current Status
 
-**Phase**: Live integration testing complete — all 5 build phases and multi-turn validation done.
+**Phase**: Post-integration — conversation context added, all live testing issues resolved.
 
 **Verified**:
 - Full REPL pipeline end-to-end across multiple turns
@@ -366,5 +392,6 @@ State conditioning happens through the Go-side pipeline (gate thresholds, retrie
 - Evidence accumulates in ChromaDB and influences re-generation
 - Provenance log captures full audit trail
 - Gate correctly applies hard vetoes (RiskFlag) and soft scoring
+- Conversation context flows end-to-end (Ollama context tokens persisted per session)
 
 **All known issues resolved.** gRPC timeouts now configurable via env vars (defaults: 60s generate, 30s search, 15s store, 15s embed).
