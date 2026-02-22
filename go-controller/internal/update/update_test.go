@@ -383,6 +383,112 @@ func TestNegativeStateDirection(t *testing.T) {
 	}
 }
 
+func TestStateNormalization_Fires(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	// Set all 128 elements to 1.0 → norm = sqrt(128) ≈ 11.31
+	for i := 0; i < 128; i++ {
+		old.StateVector[i] = 1.0
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1", Entropy: 0.5}
+	sig := Signals{SentimentScore: 0.5}
+	cfg := UpdateConfig{LearningRate: 0.01, DecayRate: 0, MaxDeltaNormPerSegment: 1.0, MaxStateNorm: 3.0}
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Compute resulting norm — should be capped at 3.0
+	var sumSq float64
+	for _, v := range result.NewState.StateVector {
+		sumSq += float64(v) * float64(v)
+	}
+	norm := math.Sqrt(sumSq)
+	if norm > 3.01 {
+		t.Fatalf("state norm %.4f exceeds cap 3.0", norm)
+	}
+	if norm < 2.99 {
+		t.Fatalf("state norm %.4f should be ~3.0 after normalization", norm)
+	}
+}
+
+func TestStateNormalization_PreservesDirection(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	// Mix of positive and negative
+	for i := 0; i < 64; i++ {
+		old.StateVector[i] = 1.0
+	}
+	for i := 64; i < 128; i++ {
+		old.StateVector[i] = -1.0
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{}
+	cfg := UpdateConfig{LearningRate: 0, DecayRate: 0, MaxDeltaNormPerSegment: 1.0, MaxStateNorm: 3.0}
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Positive elements should stay positive, negative should stay negative
+	for i := 0; i < 64; i++ {
+		if result.NewState.StateVector[i] <= 0 {
+			t.Fatalf("index %d: expected positive, got %.4f", i, result.NewState.StateVector[i])
+		}
+	}
+	for i := 64; i < 128; i++ {
+		if result.NewState.StateVector[i] >= 0 {
+			t.Fatalf("index %d: expected negative, got %.4f", i, result.NewState.StateVector[i])
+		}
+	}
+}
+
+func TestStateNormalization_Disabled(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	for i := 0; i < 128; i++ {
+		old.StateVector[i] = 1.0
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{}
+	cfg := UpdateConfig{LearningRate: 0, DecayRate: 0, MaxDeltaNormPerSegment: 1.0, MaxStateNorm: 0} // disabled
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// No normalization → values unchanged
+	for i := 0; i < 128; i++ {
+		if result.NewState.StateVector[i] != 1.0 {
+			t.Fatalf("index %d: expected 1.0 (no normalization), got %.4f", i, result.NewState.StateVector[i])
+		}
+	}
+}
+
+func TestStateNormalization_UnderCapNoChange(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	// Only a few elements set → norm well under 3.0
+	old.StateVector[0] = 0.5
+	old.StateVector[1] = 0.5
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{}
+	cfg := UpdateConfig{LearningRate: 0, DecayRate: 0, MaxDeltaNormPerSegment: 1.0, MaxStateNorm: 3.0}
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Values should be unchanged (norm ≈ 0.71 < 3.0)
+	if result.NewState.StateVector[0] != 0.5 {
+		t.Fatalf("expected 0.5, got %.4f — normalization fired when it shouldn't", result.NewState.StateVector[0])
+	}
+}
+
 func TestMultipleSignals(t *testing.T) {
 	old := state.StateRecord{
 		VersionID:  "v1",
@@ -406,3 +512,135 @@ func TestMultipleSignals(t *testing.T) {
 		t.Fatalf("expected commit with multiple signals, got %s", result.Decision.Action)
 	}
 }
+
+// #region direction-vector-tests
+
+func TestDirectionVector_OverridesSign(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	// Seed prefs with positive values — sign fallback would push positive
+	for i := 0; i < 32; i++ {
+		old.StateVector[i] = 0.5
+	}
+
+	// Direction vector points negative on first element, positive on rest
+	dirVec := make([]float32, 32)
+	dirVec[0] = -1.0
+	for i := 1; i < 32; i++ {
+		dirVec[i] = 0.1
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{
+		SentimentScore: 0.8,
+		DirectionVectors: map[string][]float32{
+			"prefs": dirVec,
+		},
+	}
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Element 0 should have decreased (direction is negative despite existing value being positive)
+	if result.NewState.StateVector[0] >= old.StateVector[0] {
+		t.Fatalf("element 0: expected decrease from direction vector, old=%.4f new=%.4f",
+			old.StateVector[0], result.NewState.StateVector[0])
+	}
+
+	// Element 1 should have increased (positive direction)
+	if result.NewState.StateVector[1] <= old.StateVector[1] {
+		t.Fatalf("element 1: expected increase from direction vector, old=%.4f new=%.4f",
+			old.StateVector[1], result.NewState.StateVector[1])
+	}
+}
+
+func TestDirectionVector_Normalized(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+
+	// Unnormalized direction vector (large magnitude)
+	dirVec := make([]float32, 32)
+	for i := range dirVec {
+		dirVec[i] = 100.0
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{
+		SentimentScore: 0.5,
+		DirectionVectors: map[string][]float32{
+			"prefs": dirVec,
+		},
+	}
+	cfg := UpdateConfig{LearningRate: 0.01, DecayRate: 0, MaxDeltaNormPerSegment: 1.0, MaxStateNorm: 3.0}
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Delta should be bounded — normalization prevents explosion
+	var prefsDelta float64
+	for i := 0; i < 32; i++ {
+		d := float64(result.NewState.StateVector[i] - old.StateVector[i])
+		prefsDelta += d * d
+	}
+	prefsDeltaNorm := math.Sqrt(prefsDelta)
+	if prefsDeltaNorm > float64(cfg.MaxDeltaNormPerSegment)+0.001 {
+		t.Fatalf("prefs delta norm %.6f exceeds cap %.6f despite large direction vector",
+			prefsDeltaNorm, cfg.MaxDeltaNormPerSegment)
+	}
+}
+
+func TestDirectionVector_WrongSizeFallsBack(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	for i := 0; i < 32; i++ {
+		old.StateVector[i] = 0.5
+	}
+
+	// Wrong size direction vector — should fall back to sign(existing)
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{
+		SentimentScore: 0.8,
+		DirectionVectors: map[string][]float32{
+			"prefs": {1.0, 2.0}, // wrong size, not 32
+		},
+	}
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Should still work (fallback) — all elements should increase (sign = +1)
+	for i := 0; i < 32; i++ {
+		if result.NewState.StateVector[i] <= old.StateVector[i] {
+			t.Fatalf("element %d: expected increase from sign fallback, old=%.4f new=%.4f",
+				i, old.StateVector[i], result.NewState.StateVector[i])
+		}
+	}
+}
+
+func TestDirectionVector_NilMapFallsBack(t *testing.T) {
+	old := state.StateRecord{
+		VersionID:  "v1",
+		SegmentMap: state.DefaultSegmentMap(),
+	}
+	for i := 0; i < 32; i++ {
+		old.StateVector[i] = 0.5
+	}
+
+	ctx := UpdateContext{TurnID: "turn-1"}
+	sig := Signals{SentimentScore: 0.8} // no DirectionVectors
+	cfg := DefaultUpdateConfig()
+
+	result := Update(old, ctx, sig, nil, cfg)
+
+	// Should work normally with sign fallback
+	if result.Decision.Action != "commit" {
+		t.Fatalf("expected commit, got %s", result.Decision.Action)
+	}
+}
+
+// #endregion direction-vector-tests

@@ -65,9 +65,6 @@ func main() {
 	}
 	defer codecClient.Close()
 
-	// Initialize retriever with triple-gated config
-	retriever := retrieval.NewRetriever(codecClient, retrieval.DefaultConfig())
-
 	// Phase 3: Initialize gate and eval harness
 	stateGate := gate.NewGate(gate.DefaultGateConfig())
 	evalHarness := eval.NewEvalHarness(eval.DefaultEvalConfig())
@@ -109,17 +106,20 @@ func main() {
 		}
 
 		// Detect and store explicit preferences
+		isPreferenceOnly := false
 		if prefText, detected := projection.DetectPreference(prompt); detected {
 			if err := prefStore.Add(prefText, "explicit"); err != nil {
 				log.Printf("preference store error: %v", err)
 			} else {
 				log.Printf("preference stored: %q", prefText)
 			}
+			isPreferenceOnly = true
 		}
 		// Detect corrections — also flag for gate veto
 		if projection.DetectCorrection(prompt) {
 			userCorrected = true
 			log.Printf("correction detected in prompt")
+			isPreferenceOnly = false // corrections need generation
 		}
 
 		turnNum++
@@ -155,81 +155,105 @@ func main() {
 			log.Printf("[%s] state projection: %d prefs, prefs_norm=%.4f", turnID, len(storedPrefs), prefsNorm)
 		}
 
-		// Step 2: First-pass Generate to get entropy
-		ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-		result, err := codecClient.Generate(ctx, wrappedPrompt, current.StateVector, nil, ollamaCtx)
-		cancel()
-		if err != nil {
-			log.Printf("codec error: %v", err)
-			continue
+		// Compute goals segment norm for retrieval threshold adjustment
+		goalsNorm := float32(0)
+		for i := current.SegmentMap.Goals[0]; i < current.SegmentMap.Goals[1]; i++ {
+			goalsNorm += current.StateVector[i] * current.StateVector[i]
 		}
-		ollamaCtx = result.Context
+		goalsNorm = float32(math.Sqrt(float64(goalsNorm)))
 
-		// Step 3: Triple-gated retrieval (if entropy warrants it)
+		// Variables that may be populated by generation or skipped for instruction-only prompts
+		var result codec.GenerateResult
 		var evidenceStrings []string
 		var evidenceRefs []string
-		ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
-		gateResult, err := retriever.Retrieve(ctx2, prompt, result.Entropy)
-		cancel2()
-		if err != nil {
-			log.Printf("retrieval error (non-fatal): %v", err)
-		} else if len(gateResult.Retrieved) > 0 {
-			for _, ev := range gateResult.Retrieved {
-				evidenceStrings = append(evidenceStrings, ev.Text)
-				evidenceRefs = append(evidenceRefs, ev.ID)
-			}
-			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
+		var gateResult retrieval.GateResult
 
-			// Re-generate with evidence injected
-			ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
-			cancel3()
+		if isPreferenceOnly {
+			// Instruction-only prompt: skip generation, provide canned acknowledgment
+			fmt.Println("\nGot it. I'll keep that in mind.\n")
+			log.Printf("[%s] preference-only prompt — skipped generation", turnID)
+			// Set minimal result for learning loop
+			result = codec.GenerateResult{
+				Text:    "Got it. I'll keep that in mind.",
+				Entropy: 0.0,
+			}
+		} else {
+			// Step 2: First-pass Generate to get entropy
+			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
+			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, nil, ollamaCtx)
+			cancel()
 			if err != nil {
-				log.Printf("re-generate error: %v", err)
+				log.Printf("codec error: %v", err)
 				continue
 			}
 			ollamaCtx = result.Context
-		} else {
-			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
-		}
 
-		// Web search fallback: search when no usable evidence exists
-		// - coherenceFiltered: gate2 found candidates but gate3 rejected all → search regardless of entropy
-		// - noUsableEvidence + highEntropy: no candidates at all and model is uncertain
-		noUsableEvidence := len(evidenceStrings) == 0
-		coherenceFiltered := gateResult.Gate2Count > 0 && gateResult.Gate3Count == 0
-		highEntropy := float64(result.Entropy) > webSearchCfg.EntropyThreshold
-		if (coherenceFiltered || (noUsableEvidence && highEntropy)) && webSearchCfg.Enabled {
-			log.Printf("[%s] web search triggered: noEvidence=%v coherenceFiltered=%v entropy=%.4f",
-				turnID, noUsableEvidence, coherenceFiltered, result.Entropy)
-			webCtx, webCancel := context.WithTimeout(context.Background(), webSearchCfg.Timeout)
-			grpcResults, webErr := codecClient.WebSearch(webCtx, prompt, webSearchCfg.MaxResults)
-			webCancel()
-			if webErr != nil {
-				log.Printf("[%s] web search error (non-fatal): %v", turnID, webErr)
-			} else if len(grpcResults) > 0 {
-				// Convert codec.WebSearchResult → websearch.Result for formatting
-				webResults := make([]websearch.Result, len(grpcResults))
-				for i, r := range grpcResults {
-					webResults[i] = websearch.Result{Title: r.Title, Snippet: r.Snippet, URL: r.URL}
+			// Step 3: Triple-gated retrieval with goals-adjusted threshold
+			retCfg := retrieval.DefaultConfig()
+			retCfg.SimilarityThreshold = retrieval.AdjustedThreshold(retCfg.SimilarityThreshold, goalsNorm)
+			adjustedRetriever := retrieval.NewRetriever(codecClient, retCfg)
+
+			ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
+			gateResult, err = adjustedRetriever.Retrieve(ctx2, prompt, result.Entropy)
+			cancel2()
+			if err != nil {
+				log.Printf("retrieval error (non-fatal): %v", err)
+			} else if len(gateResult.Retrieved) > 0 {
+				for _, ev := range gateResult.Retrieved {
+					evidenceStrings = append(evidenceStrings, ev.Text)
+					evidenceRefs = append(evidenceRefs, ev.ID)
 				}
-				webEvidence := websearch.FormatAsEvidence(webResults)
-				evidenceStrings = append(evidenceStrings, webEvidence)
-				log.Printf("[%s] web search: injected %d results", turnID, len(grpcResults))
+				log.Printf("[%s] retrieval: %s (adjusted_threshold=%.4f, goals_norm=%.4f)",
+					turnID, gateResult.Reason, retCfg.SimilarityThreshold, goalsNorm)
 
-				// Re-generate with web search evidence
-				webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(webGenCtx, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
-				webGenCancel()
+				// Re-generate with evidence injected
+				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
+				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
+				cancel3()
 				if err != nil {
-					log.Printf("web re-generate error: %v", err)
+					log.Printf("re-generate error: %v", err)
 					continue
 				}
 				ollamaCtx = result.Context
+			} else {
+				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 			}
-		}
 
-		fmt.Printf("\n%s\n\n", result.Text)
+			// Web search fallback: search when no usable evidence exists
+			noUsableEvidence := len(evidenceStrings) == 0
+			coherenceFiltered := gateResult.Gate2Count > 0 && gateResult.Gate3Count == 0
+			highEntropy := float64(result.Entropy) > webSearchCfg.EntropyThreshold
+			if (coherenceFiltered || (noUsableEvidence && highEntropy)) && webSearchCfg.Enabled {
+				log.Printf("[%s] web search triggered: noEvidence=%v coherenceFiltered=%v entropy=%.4f",
+					turnID, noUsableEvidence, coherenceFiltered, result.Entropy)
+				webCtx, webCancel := context.WithTimeout(context.Background(), webSearchCfg.Timeout)
+				grpcResults, webErr := codecClient.WebSearch(webCtx, prompt, webSearchCfg.MaxResults)
+				webCancel()
+				if webErr != nil {
+					log.Printf("[%s] web search error (non-fatal): %v", turnID, webErr)
+				} else if len(grpcResults) > 0 {
+					webResults := make([]websearch.Result, len(grpcResults))
+					for i, r := range grpcResults {
+						webResults[i] = websearch.Result{Title: r.Title, Snippet: r.Snippet, URL: r.URL}
+					}
+					webEvidence := websearch.FormatAsEvidence(webResults)
+					evidenceStrings = append(evidenceStrings, webEvidence)
+					log.Printf("[%s] web search: injected %d results", turnID, len(grpcResults))
+
+					// Re-generate with web search evidence
+					webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
+					result, err = codecClient.Generate(webGenCtx, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
+					webGenCancel()
+					if err != nil {
+						log.Printf("web re-generate error: %v", err)
+						continue
+					}
+					ollamaCtx = result.Context
+				}
+			}
+
+			fmt.Printf("\n%s\n\n", result.Text)
+		}
 
 		// Step 4: Store this interaction as evidence for future retrieval
 		storeText := prompt + "\n" + result.Text
@@ -262,6 +286,40 @@ func main() {
 		sigs := signalProducer.Produce(ctx5, signalInput)
 		cancel5()
 		userCorrected = false
+
+		// Priority 1: Override SentimentScore with preference compliance
+		complianceScore := projection.PreferenceComplianceScore(storedPrefs, result.Text)
+		sigs.SentimentScore = complianceScore
+		log.Printf("[%s] compliance_score=%.4f (overrides sentiment)", turnID, complianceScore)
+
+		// Priority 2: Compute direction vectors from preference embeddings
+		directionSource := ""
+		var directionSegments []string
+		if len(storedPrefs) > 0 {
+			// Concatenate preference texts for embedding
+			var prefTexts []string
+			for _, p := range storedPrefs {
+				prefTexts = append(prefTexts, p.Text)
+			}
+			prefConcat := strings.Join(prefTexts, "; ")
+			embedCtx, embedCancel := context.WithTimeout(context.Background(), timeoutEmbed)
+			embedding, embedErr := codecClient.Embed(embedCtx, prefConcat)
+			embedCancel()
+			if embedErr != nil {
+				log.Printf("[%s] direction embed error (non-fatal, using sign fallback): %v", turnID, embedErr)
+			} else if len(embedding) >= 32 {
+				// Truncate to 32 dims (prefs segment size)
+				prefsDir := embedding[:32]
+				if sigs.DirectionVectors == nil {
+					sigs.DirectionVectors = make(map[string][]float32)
+				}
+				sigs.DirectionVectors["prefs"] = prefsDir
+				directionSource = "embedding"
+				directionSegments = append(directionSegments, "prefs")
+				log.Printf("[%s] direction vector: prefs from embedding (%d dims → 32)", turnID, len(embedding))
+			}
+		}
+
 		updateResult := update.Update(current, updateCtx, sigs, evidenceStrings, updateConfig)
 
 		// Step 6: Gate evaluation — hard vetoes + soft scoring
@@ -292,10 +350,12 @@ func main() {
 				RiskSegmentCap: gate.DefaultGateConfig().RiskSegmentCap,
 				MaxSegmentNorm: eval.DefaultEvalConfig().MaxSegmentNorm,
 			},
-			GateAction:    gateDecision.Action,
-			GateSoftScore: gateDecision.SoftScore,
-			GateVetoed:    gateDecision.Vetoed,
-			GateReason:    gateDecision.Reason,
+			DirectionSource:   directionSource,
+			DirectionSegments: directionSegments,
+			GateAction:        gateDecision.Action,
+			GateSoftScore:     gateDecision.SoftScore,
+			GateVetoed:        gateDecision.Vetoed,
+			GateReason:        gateDecision.Reason,
 		}
 		signalsJSON, _ := json.Marshal(gateRecord)
 

@@ -163,6 +163,137 @@ func TestDetectCorrection(t *testing.T) {
 
 // #endregion detect-tests
 
+// #region style-tests
+
+func TestInferStyle(t *testing.T) {
+	cases := []struct {
+		input string
+		want  PreferenceStyle
+	}{
+		{"I prefer short answers", StyleConcise},
+		{"Keep it brief", StyleConcise},
+		{"No fluff please", StyleConcise},
+		{"Be concise", StyleConcise},
+		{"I want detailed explanations", StyleDetailed},
+		{"Be thorough", StyleDetailed},
+		{"Always use examples", StyleExamples},
+		{"Show me code examples", StyleExamples},
+		{"I like friendly tone", StyleGeneral},
+		{"Always respond in English", StyleGeneral},
+	}
+	for _, tc := range cases {
+		got := InferStyle(tc.input)
+		if got != tc.want {
+			t.Errorf("InferStyle(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+// #endregion style-tests
+
+// #region compliance-tests
+
+func TestPreferenceComplianceScore_ConciseShortResponse(t *testing.T) {
+	prefs := []Preference{{Style: StyleConcise}}
+	score := PreferenceComplianceScore(prefs, "Paris.")
+	if score < 0.7 {
+		t.Errorf("expected high score for concise compliance, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_ConciseLongResponse(t *testing.T) {
+	prefs := []Preference{{Style: StyleConcise}}
+	long := strings.Repeat("word ", 60)
+	score := PreferenceComplianceScore(prefs, long)
+	if score > 0.3 {
+		t.Errorf("expected low score for verbose response with concise pref, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_DetailedLongResponse(t *testing.T) {
+	prefs := []Preference{{Style: StyleDetailed}}
+	long := strings.Repeat("word ", 120)
+	score := PreferenceComplianceScore(prefs, long)
+	if score < 0.7 {
+		t.Errorf("expected high score for detailed compliance, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_NoPreferences(t *testing.T) {
+	score := PreferenceComplianceScore(nil, "anything")
+	if score != 0.5 {
+		t.Errorf("expected neutral 0.5 with no prefs, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_GeneralOnly(t *testing.T) {
+	prefs := []Preference{{Style: StyleGeneral}}
+	score := PreferenceComplianceScore(prefs, "anything")
+	if score != 0.5 {
+		t.Errorf("expected neutral 0.5 for general-only prefs, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_ExamplesPresent(t *testing.T) {
+	prefs := []Preference{{Style: StyleExamples}}
+	score := PreferenceComplianceScore(prefs, "For example, consider the following...")
+	if score < 0.6 {
+		t.Errorf("expected above-neutral for examples compliance, got %.2f", score)
+	}
+}
+
+func TestPreferenceComplianceScore_ExamplesMissing(t *testing.T) {
+	prefs := []Preference{{Style: StyleExamples}}
+	score := PreferenceComplianceScore(prefs, "The answer is simple.")
+	if score > 0.5 {
+		t.Errorf("expected below-neutral when examples missing, got %.2f", score)
+	}
+}
+
+// #endregion compliance-tests
+
+// #region contradiction-tests
+
+func TestPreferenceStore_ContradictionReplaces(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewPreferenceStore(db)
+
+	store.Add("I prefer short answers", "explicit")   // concise
+	store.Add("I want detailed answers", "explicit")   // detailed — should NOT remove concise (different style)
+
+	prefs, _ := store.List()
+	if len(prefs) != 2 {
+		t.Fatalf("expected 2 prefs (different styles), got %d", len(prefs))
+	}
+
+	store.Add("Be very brief and terse", "explicit")   // concise — should replace first concise pref
+	prefs, _ = store.List()
+	if len(prefs) != 2 {
+		t.Fatalf("expected 2 prefs after concise replacement, got %d", len(prefs))
+	}
+	// The concise one should be the new one
+	for _, p := range prefs {
+		if p.Style == StyleConcise && p.Text != "Be very brief and terse" {
+			t.Errorf("expected replaced concise pref, got %q", p.Text)
+		}
+	}
+}
+
+func TestPreferenceStore_GeneralDoesNotReplace(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewPreferenceStore(db)
+
+	store.Add("Always respond in English", "explicit")
+	store.Add("Use a friendly tone", "explicit")
+
+	prefs, _ := store.List()
+	if len(prefs) != 2 {
+		t.Fatalf("expected 2 general prefs (no replacement), got %d", len(prefs))
+	}
+}
+
+// #endregion contradiction-tests
+
 // #region project-tests
 
 func TestProjectToPrompt_WithPreferences(t *testing.T) {

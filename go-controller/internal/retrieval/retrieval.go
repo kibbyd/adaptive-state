@@ -22,6 +22,21 @@ func NewRetriever(codec *codec.CodecClient, config RetrievalConfig) *Retriever {
 // #endregion retriever
 
 // #region retrieve
+// AdjustedThreshold computes the similarity threshold adjusted by goals_norm.
+// Higher goals_norm → lower threshold → more aggressive retrieval.
+// Bounded: never reduces by more than 0.15, never goes below 0.1.
+func AdjustedThreshold(base float32, goalsNorm float32) float32 {
+	reduction := goalsNorm * 0.05
+	if reduction > 0.15 {
+		reduction = 0.15
+	}
+	adjusted := base - reduction
+	if adjusted < 0.1 {
+		adjusted = 0.1
+	}
+	return adjusted
+}
+
 // Retrieve runs the 3-gate retrieval pipeline:
 //  1. Gate 1 — Confidence: skip retrieval if entropy is below threshold
 //  2. Gate 2 — Similarity: search with threshold (enforced server-side by ChromaDB)
@@ -62,11 +77,14 @@ func (r *Retriever) Retrieve(ctx context.Context, prompt string, entropy float32
 
 	// Gate 3: consistency check
 	gate3Results := r.consistencyCheck(gate2Results)
+
+	// Gate 3.5: topic coherence filter
+	gate3Results = r.topicCoherenceFilter(prompt, gate3Results)
 	result.Gate3Count = len(gate3Results)
 	result.Retrieved = gate3Results
 
 	if result.Gate3Count == 0 {
-		result.Reason = "gate3: all results failed consistency check"
+		result.Reason = "gate3: all results failed consistency/coherence check"
 	} else {
 		result.Reason = fmt.Sprintf("retrieved %d evidence items (gate2=%d, gate3=%d)",
 			result.Gate3Count, result.Gate2Count, result.Gate3Count)
@@ -107,3 +125,30 @@ func (r *Retriever) consistencyCheck(results []EvidenceRecord) []EvidenceRecord 
 }
 
 // #endregion consistency-check
+
+// #region topic-coherence
+// topicCoherenceFilter removes evidence items that share no meaningful
+// keywords with the prompt. This prevents stylistically similar but
+// topically irrelevant evidence from reaching the model.
+func (r *Retriever) topicCoherenceFilter(prompt string, results []EvidenceRecord) []EvidenceRecord {
+	minShared := r.config.MinSharedKeywords
+	if minShared <= 0 {
+		minShared = 1
+	}
+	promptTokens := tokenize(prompt)
+	if len(promptTokens) == 0 {
+		// No content words in prompt — skip filter to avoid false rejections
+		return results
+	}
+
+	var valid []EvidenceRecord
+	for _, rec := range results {
+		evidenceTokens := tokenize(rec.Text)
+		if sharedKeywords(promptTokens, evidenceTokens) >= minShared {
+			valid = append(valid, rec)
+		}
+	}
+	return valid
+}
+
+// #endregion topic-coherence

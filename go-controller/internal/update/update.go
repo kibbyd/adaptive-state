@@ -78,15 +78,33 @@ func Update(old state.StateRecord, ctx UpdateContext, signals Signals, evidence 
 			size := s.hi - s.lo
 			delta := make([]float32, size)
 
-			// Compute raw delta
-			for i := s.lo; i < s.hi; i++ {
-				dir := float32(1.0)
-				if vec[i] < 0 {
-					dir = -1.0
-				} else if vec[i] > 0 {
-					dir = 1.0
+			// Use semantic direction vector if provided, else fall back to sign(existing)
+			dirVec, hasDir := signals.DirectionVectors[s.name]
+			if hasDir && len(dirVec) == size {
+				// Guardrail: normalize direction vector before applying
+				var dirNormSq float64
+				for _, d := range dirVec {
+					dirNormSq += float64(d) * float64(d)
 				}
-				delta[i-s.lo] = config.LearningRate * strength * dir
+				dirNorm := float32(math.Sqrt(dirNormSq))
+				for i := 0; i < size; i++ {
+					normalized := dirVec[i]
+					if dirNorm > 0 {
+						normalized = dirVec[i] / dirNorm
+					}
+					delta[i] = config.LearningRate * strength * normalized
+				}
+			} else {
+				// Fallback: sign of existing value
+				for i := s.lo; i < s.hi; i++ {
+					dir := float32(1.0)
+					if vec[i] < 0 {
+						dir = -1.0
+					} else if vec[i] > 0 {
+						dir = 1.0
+					}
+					delta[i-s.lo] = config.LearningRate * strength * dir
+				}
 			}
 
 			// Compute L2 norm and clamp
@@ -152,6 +170,21 @@ func Update(old state.StateRecord, ctx UpdateContext, signals Signals, evidence 
 		SegmentsHit:    segmentsHit,
 		SegmentMetrics: segmentMetrics,
 		UpdateTimeMs:   elapsed,
+	}
+
+	// 5. State normalization cap — preserves direction, prevents magnitude runaway
+	if config.MaxStateNorm > 0 {
+		var sumSq float32
+		for _, v := range newRec.StateVector {
+			sumSq += v * v
+		}
+		norm := float32(math.Sqrt(float64(sumSq)))
+		if norm > config.MaxStateNorm {
+			scale := config.MaxStateNorm / norm
+			for i := range newRec.StateVector {
+				newRec.StateVector[i] *= scale
+			}
+		}
 	}
 
 	return UpdateResult{

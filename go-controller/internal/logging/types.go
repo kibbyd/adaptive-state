@@ -35,6 +35,10 @@ type GateRecord struct {
 	// Gate thresholds active at decision time
 	Thresholds GateRecordThresholds `json:"thresholds"`
 
+	// Direction vector metadata (for replay interpretability)
+	DirectionSource  string   `json:"direction_source,omitempty"`  // "embedding" | "" (sign fallback)
+	DirectionSegments []string `json:"direction_segments,omitempty"` // which segments used embedding direction
+
 	// Gate output
 	GateAction  string  `json:"gate_action"`
 	GateSoftScore float32 `json:"gate_soft_score"`

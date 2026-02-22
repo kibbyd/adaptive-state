@@ -8,6 +8,7 @@ type RetrievalConfig struct {
 	SimilarityThreshold float32 // Gate 2: min cosine similarity
 	TopK                int     // Max results from vector search
 	MaxEvidenceLen      int     // Max chars per evidence string
+	MinSharedKeywords   int     // Gate 3.5: min shared non-stopword tokens between prompt and evidence
 }
 
 // DefaultConfig returns sensible defaults for retrieval gating.
@@ -15,9 +16,10 @@ func DefaultConfig() RetrievalConfig {
 	return RetrievalConfig{
 		AlwaysRetrieve:      true,
 		EntropyThreshold:    0.5,
-		SimilarityThreshold: 0.3,
+		SimilarityThreshold: 0.5,
 		TopK:                5,
 		MaxEvidenceLen:       2000,
+		MinSharedKeywords:   2,
 	}
 }
 

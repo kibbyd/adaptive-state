@@ -466,3 +466,38 @@ func TestTopicCoherenceFilter_KeepsRelevant(t *testing.T) {
 }
 
 // #endregion topic-coherence-tests
+
+// #region adjusted-threshold-tests
+
+func TestAdjustedThreshold_ZeroGoals(t *testing.T) {
+	got := AdjustedThreshold(0.5, 0)
+	if got != 0.5 {
+		t.Errorf("expected 0.5, got %.4f", got)
+	}
+}
+
+func TestAdjustedThreshold_ModerateGoals(t *testing.T) {
+	got := AdjustedThreshold(0.5, 1.0)
+	// 0.5 - min(1.0*0.05, 0.15) = 0.5 - 0.05 = 0.45
+	if got < 0.449 || got > 0.451 {
+		t.Errorf("expected ~0.45, got %.4f", got)
+	}
+}
+
+func TestAdjustedThreshold_HighGoals(t *testing.T) {
+	got := AdjustedThreshold(0.5, 5.0)
+	// 0.5 - min(5.0*0.05, 0.15) = 0.5 - 0.15 = 0.35 (capped reduction)
+	if got < 0.349 || got > 0.351 {
+		t.Errorf("expected ~0.35, got %.4f", got)
+	}
+}
+
+func TestAdjustedThreshold_FloorProtection(t *testing.T) {
+	got := AdjustedThreshold(0.15, 5.0)
+	// 0.15 - 0.15 = 0.0, but floor is 0.1
+	if got < 0.099 || got > 0.101 {
+		t.Errorf("expected 0.1 (floor), got %.4f", got)
+	}
+}
+
+// #endregion adjusted-threshold-tests

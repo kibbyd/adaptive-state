@@ -22,6 +22,13 @@ type Signals struct {
 	UserCorrection      bool // Phase 3: user explicitly corrected prior response
 	ToolFailure         bool // Phase 3: tool/verifier reported failure
 	ConstraintViolation bool // Phase 3: detected contradiction with constraints
+
+	// DirectionVectors provides semantic delta directions per segment.
+	// Keys: "prefs", "goals", "heuristics", "risk".
+	// Each slice must match the segment size (32 elements).
+	// When present, used instead of sign(existing) for delta direction.
+	// Must be L2-normalized before setting.
+	DirectionVectors map[string][]float32
 }
 // #endregion signals
 
@@ -56,6 +63,7 @@ type UpdateConfig struct {
 	LearningRate           float32 // magnitude of signal-driven deltas (default 0.01)
 	DecayRate              float32 // per-element multiplicative decay (default 0.005)
 	MaxDeltaNormPerSegment float32 // L2 clamp per segment (default 1.0)
+	MaxStateNorm           float32 // post-update L2 cap on full state vector (0 = disabled)
 }
 
 // DefaultUpdateConfig returns sensible defaults for Phase 4.
@@ -64,6 +72,7 @@ func DefaultUpdateConfig() UpdateConfig {
 		LearningRate:           0.01,
 		DecayRate:              0.005,
 		MaxDeltaNormPerSegment: 1.0,
+		MaxStateNorm:           3.0,
 	}
 }
 // #endregion update-config
