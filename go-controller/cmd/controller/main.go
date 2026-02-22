@@ -249,8 +249,13 @@ func main() {
 			}
 		} else {
 			// Step 2: First-pass Generate to get entropy (rules always injected)
+			// On rule turns, use bare prompt — no state block to avoid identity/preference bleed
+			generatePrompt := wrappedPrompt
+			if len(matchedRules) > 0 {
+				generatePrompt = prompt
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, ruleEvidence, nil)
+			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, ruleEvidence, nil)
 			cancel()
 			if err != nil {
 				log.Printf("codec error: %v", err)
@@ -278,7 +283,7 @@ func main() {
 				// Re-generate with evidence injected (rules prepended)
 				allEvidence := append(ruleEvidence, evidenceStrings...)
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, allEvidence, nil)
+				result, err = codecClient.Generate(ctx3, generatePrompt, current.StateVector, allEvidence, nil)
 				cancel3()
 				if err != nil {
 					log.Printf("re-generate error: %v", err)
