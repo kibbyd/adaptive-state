@@ -371,3 +371,220 @@ func TestWrapPrompt_EmptyState(t *testing.T) {
 }
 
 // #endregion project-tests
+
+// #region rule-store-tests
+
+func TestNewRuleStore_CreatesTable(t *testing.T) {
+	db := testDB(t)
+	store, err := NewRuleStore(db)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("expected non-nil store")
+	}
+
+	var name string
+	err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='rules'").Scan(&name)
+	if err != nil {
+		t.Fatalf("table not created: %v", err)
+	}
+}
+
+func TestRuleStore_AddAndList(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewRuleStore(db)
+
+	if err := store.Add("knock knock", "Who's there?", 5, 1.0); err != nil {
+		t.Fatalf("add error: %v", err)
+	}
+	if err := store.Add("Daniel", "Daniel who?", 5, 1.0); err != nil {
+		t.Fatalf("add error: %v", err)
+	}
+
+	rules, err := store.List()
+	if err != nil {
+		t.Fatalf("list error: %v", err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules, got %d", len(rules))
+	}
+	if rules[0].Trigger != "knock knock" {
+		t.Errorf("expected trigger 'knock knock', got %q", rules[0].Trigger)
+	}
+	if rules[0].Response != "Who's there?" {
+		t.Errorf("expected response 'Who's there?', got %q", rules[0].Response)
+	}
+}
+
+func TestRuleStore_ReplacesSameTrigger(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewRuleStore(db)
+
+	store.Add("knock knock", "Who's there?", 5, 1.0)
+	store.Add("knock knock", "Who goes there?", 5, 1.0) // should replace
+
+	rules, _ := store.List()
+	if len(rules) != 1 {
+		t.Fatalf("expected 1 rule after replacement, got %d", len(rules))
+	}
+	if rules[0].Response != "Who goes there?" {
+		t.Errorf("expected replaced response, got %q", rules[0].Response)
+	}
+}
+
+func TestRuleStore_RejectsEmpty(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewRuleStore(db)
+
+	if err := store.Add("", "response", 5, 1.0); err == nil {
+		t.Error("expected error for empty trigger")
+	}
+	if err := store.Add("trigger", "", 5, 1.0); err == nil {
+		t.Error("expected error for empty response")
+	}
+}
+
+func TestRuleStore_Match(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewRuleStore(db)
+
+	store.Add("knock knock", "Who's there?", 5, 1.0)
+	store.Add("Daniel", "Daniel who?", 5, 1.0)
+
+	matches, err := store.Match("knock knock")
+	if err != nil {
+		t.Fatalf("match error: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if matches[0].Response != "Who's there?" {
+		t.Errorf("expected 'Who's there?', got %q", matches[0].Response)
+	}
+
+	// Case insensitive
+	matches, _ = store.Match("KNOCK KNOCK")
+	if len(matches) != 1 {
+		t.Fatalf("expected case-insensitive match, got %d", len(matches))
+	}
+
+	// No match
+	matches, _ = store.Match("hello")
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestRuleStore_ListEmpty(t *testing.T) {
+	db := testDB(t)
+	store, _ := NewRuleStore(db)
+
+	rules, err := store.List()
+	if err != nil {
+		t.Fatalf("list error: %v", err)
+	}
+	if rules != nil {
+		t.Errorf("expected nil for empty list, got %v", rules)
+	}
+}
+
+// #endregion rule-store-tests
+
+// #region rule-detect-tests
+
+func TestDetectRule(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"when I say knock knock, you say who's there", true},
+		{"if I say Daniel, respond with Daniel who?", true},
+		{"you say who's there when I say knock knock", true},
+		{"you respond with Daniel who?", true},
+		{"your response should be who's there", true},
+		{"What is the capital of France?", false},
+		{"I prefer short answers", false},
+		{"Hello there", false},
+		{"", false},
+	}
+
+	for _, tc := range cases {
+		got := DetectRule(tc.input)
+		if got != tc.want {
+			t.Errorf("DetectRule(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestExtractRule(t *testing.T) {
+	cases := []struct {
+		input       string
+		wantTrigger string
+		wantResp    string
+		wantOK      bool
+	}{
+		{
+			"when I say knock knock, you say who's there",
+			"knock knock", "who's there", true,
+		},
+		{
+			"if I say Daniel, you respond with Daniel who?",
+			"Daniel", "Daniel who?", true,
+		},
+		{
+			"I say hello, you say hi there",
+			"hello", "hi there", true,
+		},
+		{
+			"you say who's there when I say knock knock",
+			"knock knock", "who's there", true,
+		},
+		{
+			"What is Go?",
+			"", "", false,
+		},
+	}
+
+	for _, tc := range cases {
+		trigger, resp, ok := ExtractRule(tc.input)
+		if ok != tc.wantOK {
+			t.Errorf("ExtractRule(%q) ok=%v, want %v", tc.input, ok, tc.wantOK)
+			continue
+		}
+		if ok {
+			if strings.ToLower(trigger) != strings.ToLower(tc.wantTrigger) {
+				t.Errorf("ExtractRule(%q) trigger=%q, want %q", tc.input, trigger, tc.wantTrigger)
+			}
+			if strings.ToLower(resp) != strings.ToLower(tc.wantResp) {
+				t.Errorf("ExtractRule(%q) response=%q, want %q", tc.input, resp, tc.wantResp)
+			}
+		}
+	}
+}
+
+func TestFormatRulesBlock(t *testing.T) {
+	rules := []Rule{
+		{Trigger: "knock knock", Response: "Who's there?"},
+		{Trigger: "Daniel", Response: "Daniel who?"},
+	}
+	block := FormatRulesBlock(rules)
+	if !strings.Contains(block, "[BEHAVIORAL RULES]") {
+		t.Error("missing header")
+	}
+	if !strings.Contains(block, "knock knock") {
+		t.Error("missing trigger")
+	}
+	if !strings.Contains(block, "Who's there?") {
+		t.Error("missing response")
+	}
+}
+
+func TestFormatRulesBlock_Empty(t *testing.T) {
+	block := FormatRulesBlock(nil)
+	if block != "" {
+		t.Errorf("expected empty for nil rules, got %q", block)
+	}
+}
+
+// #endregion rule-detect-tests

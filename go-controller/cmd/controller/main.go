@@ -57,6 +57,12 @@ func main() {
 		log.Fatalf("failed to init preference store: %v", err)
 	}
 
+	// Initialize rule store (uses same DB)
+	ruleStore, err := projection.NewRuleStore(store.DB())
+	if err != nil {
+		log.Fatalf("failed to init rule store: %v", err)
+	}
+
 	// Connect to Python inference service
 	codecClient, err := codec.NewCodecClient(grpcAddr)
 	if err != nil {
@@ -111,6 +117,17 @@ func main() {
 			}
 			isPreferenceOnly = true
 		}
+		// Detect and extract behavioral rules
+		if projection.DetectRule(prompt) {
+			if trigger, response, ok := projection.ExtractRule(prompt); ok {
+				if err := ruleStore.Add(trigger, response, 5, 1.0); err != nil {
+					log.Printf("rule store error: %v", err)
+				} else {
+					log.Printf("rule stored: %q → %q", trigger, response)
+				}
+				isPreferenceOnly = true // rule-teaching doesn't need generation
+			}
+		}
 		// Detect corrections — also flag for gate veto
 		if projection.DetectCorrection(prompt) {
 			userCorrected = true
@@ -158,6 +175,14 @@ func main() {
 		}
 		goalsNorm = float32(math.Sqrt(float64(goalsNorm)))
 
+		// Load behavioral rules for system prompt injection (bypasses retrieval)
+		allRules, _ := ruleStore.List()
+		var ruleEvidence []string
+		if len(allRules) > 0 {
+			rulesBlock := projection.FormatRulesBlock(allRules)
+			ruleEvidence = append(ruleEvidence, rulesBlock)
+		}
+
 		// Variables that may be populated by generation or skipped for instruction-only prompts
 		var result codec.GenerateResult
 		var evidenceStrings []string
@@ -166,7 +191,7 @@ func main() {
 
 		if isPreferenceOnly {
 			// Instruction-only prompt: skip generation, provide canned acknowledgment
-			fmt.Println("\nGot it. I'll keep that in mind.\n")
+			fmt.Print("\nGot it. I'll keep that in mind.\n\n")
 			log.Printf("[%s] preference-only prompt — skipped generation", turnID)
 			// Set minimal result for learning loop
 			result = codec.GenerateResult{
@@ -174,9 +199,9 @@ func main() {
 				Entropy: 0.0,
 			}
 		} else {
-			// Step 2: First-pass Generate to get entropy
+			// Step 2: First-pass Generate to get entropy (rules always injected)
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, nil, ollamaCtx)
+			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, ruleEvidence, ollamaCtx)
 			cancel()
 			if err != nil {
 				log.Printf("codec error: %v", err)
@@ -202,9 +227,10 @@ func main() {
 				log.Printf("[%s] retrieval: %s (adjusted_threshold=%.4f, goals_norm=%.4f)",
 					turnID, gateResult.Reason, retCfg.SimilarityThreshold, goalsNorm)
 
-				// Re-generate with evidence injected
+				// Re-generate with evidence injected (rules prepended)
+				allEvidence := append(ruleEvidence, evidenceStrings...)
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
+				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, allEvidence, ollamaCtx)
 				cancel3()
 				if err != nil {
 					log.Printf("re-generate error: %v", err)

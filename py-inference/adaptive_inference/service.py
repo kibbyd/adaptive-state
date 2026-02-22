@@ -206,19 +206,36 @@ class InferenceService:
     def _build_system_prompt(
         self, state_vector: list[float], evidence: list[str]
     ) -> str:
-        """Build system prompt: tool instruction + evidence preamble."""
-        lines = [
-            "You have access to a web_search tool. You MUST use the web_search tool for any factual question (phone numbers, addresses, URLs, statistics, dates, current events). NEVER answer factual questions from memory — always search first. For casual conversation, respond normally without searching.",
-            "Always provide a final answer after reasoning. Never output only reasoning.",
-        ]
+        """Build system prompt: behavioral rules + tool instruction + evidence preamble."""
+        # Separate behavioral rules from regular evidence
+        rules = []
+        regular_evidence = []
+        for item in (evidence or []):
+            if item.strip().startswith("[BEHAVIORAL RULES]"):
+                rules.append(item.strip())
+            else:
+                regular_evidence.append(item)
 
-        if evidence:
+        lines = []
+
+        # Behavioral rules go FIRST in system prompt (highest authority)
+        if rules:
+            for rule_block in rules:
+                lines.append(rule_block)
+            lines.append("")
+
+        lines.append(
+            "You have access to a web_search tool. You MUST use the web_search tool for any factual question (phone numbers, addresses, URLs, statistics, dates, current events). NEVER answer factual questions from memory — always search first. For casual conversation, respond normally without searching."
+        )
+        lines.append("Always provide a final answer after reasoning. Never output only reasoning.")
+
+        if regular_evidence:
             lines.append("---")
-            has_web = any("[Web Search Results]" in e for e in evidence)
+            has_web = any("[Web Search Results]" in e for e in regular_evidence)
             if has_web:
                 lines.append("Some context below comes from a live web search. Prefer web search results for factual queries.")
             lines.append("Use the following prior context to inform your answer. Do not repeat it verbatim.")
-            for i, item in enumerate(evidence, 1):
+            for i, item in enumerate(regular_evidence, 1):
                 text = item.strip()
                 if len(text) > 500:
                     text = text[:500] + "..."

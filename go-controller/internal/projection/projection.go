@@ -113,6 +113,112 @@ func (s *PreferenceStore) List() ([]Preference, error) {
 
 // #endregion store
 
+// #region rule-types
+
+// Rule is a stored behavioral rule: when trigger is matched, respond with response.
+type Rule struct {
+	ID         int
+	Trigger    string
+	Response   string
+	Priority   int
+	Confidence float64
+	CreatedAt  time.Time
+}
+
+// #endregion rule-types
+
+// #region rule-store
+
+// RuleStore manages persistent behavioral rules in SQLite.
+type RuleStore struct {
+	db *sql.DB
+}
+
+// NewRuleStore creates the rules table if needed and returns a store.
+func NewRuleStore(db *sql.DB) (*RuleStore, error) {
+	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS rules (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		trigger TEXT NOT NULL,
+		response TEXT NOT NULL,
+		priority INTEGER NOT NULL DEFAULT 5,
+		confidence REAL NOT NULL DEFAULT 1.0,
+		created_at DATETIME NOT NULL
+	)`)
+	if err != nil {
+		return nil, fmt.Errorf("create rules table: %w", err)
+	}
+	return &RuleStore{db: db}, nil
+}
+
+// Add stores a new behavioral rule. Replaces existing rule with same trigger (case-insensitive).
+func (s *RuleStore) Add(trigger, response string, priority int, confidence float64) error {
+	trigger = strings.TrimSpace(trigger)
+	response = strings.TrimSpace(response)
+	if trigger == "" || response == "" {
+		return fmt.Errorf("rule trigger and response must be non-empty")
+	}
+
+	// Replace existing rule with same trigger (case-insensitive)
+	_, err := s.db.Exec("DELETE FROM rules WHERE LOWER(trigger) = LOWER(?)", trigger)
+	if err != nil {
+		return fmt.Errorf("remove existing rule: %w", err)
+	}
+
+	_, err = s.db.Exec(
+		"INSERT INTO rules (trigger, response, priority, confidence, created_at) VALUES (?, ?, ?, ?, ?)",
+		trigger, response, priority, confidence, time.Now().UTC(),
+	)
+	if err != nil {
+		return fmt.Errorf("insert rule: %w", err)
+	}
+	return nil
+}
+
+// List returns all stored rules ordered by priority (highest first), then creation time.
+func (s *RuleStore) List() ([]Rule, error) {
+	rows, err := s.db.Query("SELECT id, trigger, response, priority, confidence, created_at FROM rules ORDER BY priority DESC, created_at")
+	if err != nil {
+		return nil, fmt.Errorf("list rules: %w", err)
+	}
+	defer rows.Close()
+
+	var rules []Rule
+	for rows.Next() {
+		var r Rule
+		var ts string
+		if err := rows.Scan(&r.ID, &r.Trigger, &r.Response, &r.Priority, &r.Confidence, &ts); err != nil {
+			return nil, fmt.Errorf("scan rule: %w", err)
+		}
+		r.CreatedAt, _ = time.Parse(time.RFC3339, ts)
+		rules = append(rules, r)
+	}
+	return rules, nil
+}
+
+// Match returns all rules whose trigger matches the input (case-insensitive substring match).
+// Returns matches ordered by priority (highest first).
+func (s *RuleStore) Match(input string) ([]Rule, error) {
+	lower := strings.ToLower(strings.TrimSpace(input))
+	if lower == "" {
+		return nil, nil
+	}
+
+	rules, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+
+	var matched []Rule
+	for _, r := range rules {
+		if strings.ToLower(r.Trigger) == lower {
+			matched = append(matched, r)
+		}
+	}
+	return matched, nil
+}
+
+// #endregion rule-store
+
 // #region detect
 
 // containsPatterns match anywhere in the text (low false-positive risk).
@@ -317,6 +423,128 @@ func clamp(v float32) float32 {
 }
 
 // #endregion compliance
+
+// #region rule-detect
+
+// rulePatterns matches phrases that teach conditional response behavior.
+var rulePatterns = []struct {
+	pattern    string // contains-match in lowercased input
+	hasCapture bool   // true if pattern implies trigger→response structure
+}{
+	{"when i say", true},
+	{"if i say", true},
+	{"you say", true},
+	{"you respond with", true},
+	{"you should say", true},
+	{"you should respond", true},
+	{"respond with", true},
+	{"reply with", true},
+	{"your response should be", true},
+}
+
+// DetectRule checks if a prompt is teaching a behavioral rule.
+// Returns true if the prompt matches rule-teaching patterns.
+func DetectRule(prompt string) bool {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+	for _, rp := range rulePatterns {
+		if strings.Contains(lower, rp.pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// ExtractRule attempts to extract trigger→response pairs from a rule-teaching prompt.
+// Looks for patterns like:
+//   - "when I say X, you say Y"
+//   - "if I say X, respond with Y"
+//   - "I say X, you say Y"
+//
+// Returns trigger, response, ok.
+func ExtractRule(prompt string) (string, string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+
+	// Pattern: "when I say <trigger>, you say/respond with <response>"
+	// Also: "if I say <trigger>, you say/respond with <response>"
+	separators := []string{
+		", you say ",
+		", you respond with ",
+		", you should say ",
+		", you should respond with ",
+		", respond with ",
+		", reply with ",
+		" you say ",
+		" you respond with ",
+		" respond with ",
+	}
+	prefixes := []string{
+		"when i say ",
+		"if i say ",
+		"i say ",
+	}
+
+	for _, prefix := range prefixes {
+		if !strings.HasPrefix(lower, prefix) {
+			continue
+		}
+		rest := prompt[len(prefix):]
+		restLower := lower[len(prefix):]
+
+		for _, sep := range separators {
+			idx := strings.Index(restLower, sep)
+			if idx < 0 {
+				continue
+			}
+			trigger := strings.TrimSpace(rest[:idx])
+			response := strings.TrimSpace(rest[idx+len(sep):])
+			// Clean up quotes and trailing punctuation
+			trigger = strings.Trim(trigger, `"'`)
+			response = strings.Trim(response, `"'.!`)
+			if trigger != "" && response != "" {
+				return trigger, response, true
+			}
+		}
+	}
+
+	// Pattern: "you say <response> when I say <trigger>"
+	if strings.HasPrefix(lower, "you say ") {
+		rest := prompt[len("you say "):]
+		restLower := lower[len("you say "):]
+		whenParts := []string{" when i say ", " if i say "}
+		for _, wp := range whenParts {
+			idx := strings.Index(restLower, wp)
+			if idx < 0 {
+				continue
+			}
+			response := strings.TrimSpace(rest[:idx])
+			trigger := strings.TrimSpace(rest[idx+len(wp):])
+			trigger = strings.Trim(trigger, `"'.!`)
+			response = strings.Trim(response, `"'.!`)
+			if trigger != "" && response != "" {
+				return trigger, response, true
+			}
+		}
+	}
+
+	return "", "", false
+}
+
+// FormatRulesBlock builds the behavioral rules block for system prompt injection.
+// Returns empty string if no rules exist.
+func FormatRulesBlock(rules []Rule) string {
+	if len(rules) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("[BEHAVIORAL RULES]\n")
+	b.WriteString("Follow these rules EXACTLY. They override all other behavior.\n")
+	for _, r := range rules {
+		b.WriteString(fmt.Sprintf("- If user says: %s → You respond with: %s\n", r.Trigger, r.Response))
+	}
+	return b.String()
+}
+
+// #endregion rule-detect
 
 // #region project
 

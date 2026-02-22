@@ -19,7 +19,7 @@ func DefaultConfig() RetrievalConfig {
 		SimilarityThreshold: 0.5,
 		TopK:                5,
 		MaxEvidenceLen:       2000,
-		MinSharedKeywords:   2,
+		MinSharedKeywords:   1,
 	}
 }
 
