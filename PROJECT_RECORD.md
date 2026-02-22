@@ -6,8 +6,9 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
 
 ## Outcome Summary
 
-- **Working**: Full adaptive state pipeline — 5 build phases, multi-turn dialogue, web search fallback, deterministic replay
+- **Working**: Full adaptive state pipeline — 5 build phases, multi-turn dialogue, native tool calling with web search, deterministic replay
 - **Working**: Semantic learning operational (`semantic-learning-v1` tag) — compliance scoring, embedding-based direction vectors, instruction-only prompt handling, goals-adjusted retrieval
+- **Working**: Native tool calling — Python service uses `/api/chat` with tools, model calls `web_search` natively, forced fallback for factual questions, Qwen3 think-only handling
 - **Working**: Cross-session persistence verified — preference set in session 1 shapes output in session 2 without restating
 - **Working**: Compositional adaptation verified — "bullet points" + "concise" preferences compose correctly
 - **Working**: 95–100% test coverage on all core Go packages (11 packages)
@@ -34,10 +35,9 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
 │                        Go Controller                            │
 │                                                                 │
 │  REPL Loop (cmd/controller/main.go)                             │
-│    ├── Generate (first-pass) ──────────────────────┐            │
+│    ├── Generate (via gRPC → Python chat+tools) ────┐            │
 │    ├── Triple-Gated Retrieval ─────────────────┐   │            │
-│    ├── Web Search Fallback (if 0 evidence) ─┐  │   │            │
-│    ├── Re-Generate (with evidence) ──────────┤  │   │            │
+│    ├── Re-Generate (with evidence) ──────────┬─┤   │            │
 │    ├── Store Evidence ───────────────────────┤  │   │            │
 │    ├── Produce Signals ──────────────────────┤  │   │            │
 │    ├── Update (learning + decay) ────────────┤  │   │            │
@@ -53,24 +53,29 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
 └──────────────────────┼───────────────────────────────┘            │
                        │                                            │
 ┌──────────────────────▼──────────────────────────────┐            │
-│               Python Inference Service               │            │
-│                                                      │            │
-│  CodecServiceServicer (threaded asyncio event loop)  │            │
-│    ├── Generate → Ollama /api/generate               │            │
-│    ├── Embed → Ollama /api/embed                     │            │
-│    ├── Search → ChromaDB cosine similarity           │            │
-│    └── StoreEvidence → ChromaDB insert               │            │
-│                                                      │            │
-│  ChromaDB: persistent vector store                   │            │
-└──────────────────────────────────────────────────────┘            │
-                       │                                            │
-                       ▼                                            │
-               Ollama (frozen LLM)                                  │
-               qwen3-4b (gen) + qwen3-embedding:0.6b (embed)       │
-               localhost:11434                                      │
-                                                                    │
-         DuckDuckGo (DDGS) ◄─── WebSearch RPC ◄────────────────────┘
-         (web search via Python gRPC, real web scraping)
+│               Python Inference Service               │
+│                                                      │
+│  CodecServiceServicer (threaded asyncio event loop)  │
+│    ├── Generate → Ollama /api/chat + tools ──────────┤
+│    │     ├── Native tool calls (model decides)       │
+│    │     ├── Forced fallback (factual heuristic)     │
+│    │     ├── Think-only fix (continuation prompt)    │
+│    │     └── DDGS web search execution               │
+│    ├── Embed → Ollama /api/embed                     │
+│    ├── Search → ChromaDB cosine similarity           │
+│    └── StoreEvidence → ChromaDB insert               │
+│                                                      │
+│  ChromaDB: persistent vector store                   │
+└──────────────────────────────────────────────────────┘
+                       │
+                       ▼
+               Ollama (frozen LLM)
+               qwen3-4b (gen) + qwen3-embedding:0.6b (embed)
+               localhost:11434
+                       │
+                       ▼
+         DuckDuckGo (DDGS) ◄── native tool call from model
+         (web search via ddgs Python library)
 ```
 
 **Three memory layers:**
@@ -78,7 +83,7 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
 - **Long-term**: ChromaDB evidence — gated retrieval across sessions
 - **Persistent preferences**: SQLite `preferences` table — style-tagged, contradiction-handled, projected into every prompt
 
-**Design rationale**: Go owns all decision logic (gate, update, decay, eval, rollback). Python is a stateless codec wrapper — it calls Ollama and ChromaDB but makes no decisions. The model sees stored preferences via `[ADAPTIVE STATE]` prompt block, but never sees raw state vector norms.
+**Design rationale**: Go owns all adaptive state logic (gate, update, decay, eval, rollback). Python is the generation brain — it manages chat, tool calling, and web search via Ollama `/api/chat`. Go delegates generation entirely but controls what state context is injected. The model sees stored preferences via `[ADAPTIVE STATE]` prompt block, but never sees raw state vector norms.
 
 ## What Was Built
 
@@ -192,11 +197,24 @@ In-memory replay mirrors the full pipeline (update → gate → eval → rollbac
 
 Reads state store, computes per-segment L2 norms, prints tables showing version history with drift metrics.
 
-### 10. Web Search Fallback
+### 10. Native Tool Calling + Web Search
 
-**Packages**: `internal/websearch/` (config + formatting), `internal/codec/` (WebSearch RPC)
+**Package**: `py-inference/adaptive_inference/service.py`
 
-When retrieval returns zero evidence and entropy is above threshold (0.3), or when Gate 3 coherence-filters all Gate 2 results, Go calls `codecClient.WebSearch()` via gRPC. The Python servicer uses `duckduckgo_search.DDGS` for real web scraping (replaced the original HTTP instant answer API which returned empty for most queries). Results are formatted as `[Web Search Results]` and injected as evidence for re-generation. The prompt is still stored in ChromaDB — so repeat queries hit cached evidence instead of the web.
+The model decides when to search via Ollama's native tool calling (`/api/chat` with `tools` parameter). Python defines a `web_search` tool and executes it via `ddgs.DDGS.text()`.
+
+**Three-layer search strategy:**
+1. **Native tool call** — model calls `web_search` on its own (best case)
+2. **Forced fallback** — if model skips tool on a factual question (detected by `_is_factual_question()` heuristic: question structure + factual keyword), Python forces a DDGS search and feeds results back
+3. **Evidence skip** — forced fallback is skipped when evidence already present (avoids redundant search on the second Generate call)
+
+**Qwen3 think-only handling:**
+- Qwen3-4B sometimes emits only `<think>` blocks with no visible answer when using chat+tools
+- Fix 1: Send continuation prompt ("Provide the final answer only.") via same chat session
+- Fix 2: System instruction "Always provide a final answer after reasoning. Never output only reasoning."
+- Fix 3 (last resort): Retry via `/api/generate` endpoint if continuation also returns empty
+
+Replaces the old Go-side entropy-based web search heuristic, which never fired because the model was confident when hallucinating (entropy stayed low). The Go `internal/websearch/` package still exists but is unused by the controller.
 
 ### 11. State→Prompt Projection
 
@@ -221,27 +239,16 @@ The goals segment L2 norm dynamically adjusts the retrieval similarity threshold
 
 ### 13. Conversation Context (Multi-Turn)
 
-Ollama's `context` token array flows end-to-end:
-
-```
-Go REPL (var ollamaCtx []int64)
-  → gRPC GenerateRequest.context
-    → Python → Ollama /api/generate payload["context"]
-    ← Ollama response["context"]
-  ← gRPC GenerateResponse.context
-← result.Context → ollamaCtx (updated for next turn)
-```
-
-Session-scoped. Initialized as nil, grows with each turn.
+Previously used Ollama's `context` token array via `/api/generate`. Now uses `/api/chat` with messages — conversation context is managed per-call within the Python service's `_chat_with_tools()` loop. The Go-side `ollamaCtx` variable is retained but receives empty context from the chat API (context array is a generate-endpoint concept).
 
 ### 14. Python Inference Service
 
 **Package**: `py-inference/adaptive_inference/`
 
-- `server.py` — gRPC servicer with threaded asyncio event loop (prevents concurrent RPC deadlocks). Includes `WebSearch` RPC using `duckduckgo_search.DDGS`.
-- `service.py` — InferenceService (state conditioning, entropy). Entropy = visible words / 400, capped at 1.0, after stripping `<think>` blocks.
+- `server.py` — gRPC servicer with threaded asyncio event loop (prevents concurrent RPC deadlocks). Includes legacy `WebSearch` RPC.
+- `service.py` — InferenceService: generation brain with native tool calling (`/api/chat` + tools), web search tool definition + DDGS execution, factual question heuristic, Qwen3 think-only handling (continuation + generate fallback), `<think>` stripping. Entropy = visible words / 400, capped at 1.0.
 - `memory.py` — ChromaDB wrapper (store, search, delete)
-- `ollama_client.py` — Ollama HTTP API client (generate, embed)
+- `ollama_client.py` — Ollama HTTP API client (generate, embed, chat)
 
 ## Protocol Definition
 
@@ -349,6 +356,8 @@ Sentiment was inverted (nonsense scored 0.998), direction was sign-based positiv
 | 10 | SentimentScore inverted | Lexical diversity × (1-entropy) scores nonsense highest | Replaced with `PreferenceComplianceScore` (style-aware, neutral default) |
 | 11 | Update direction meaningless | `sign(existing)` creates positive feedback loop | Embedding-based direction vectors from preference text, L2-normalized |
 | 12 | Preferences table missing `style` | Pre-existing DBs created before style column added | ALTER TABLE migration in `NewPreferenceStore()` |
+| 13 | Web search never triggers | Entropy-based heuristic fails — model is confident when hallucinating, entropy stays low | Replaced with native tool calling (model decides) + forced fallback heuristic |
+| 14 | Qwen3 think-only responses | Chat API + tools causes model to emit only `<think>` blocks with no visible answer | Continuation prompt + system instruction + generate fallback |
 
 ## Model Selection
 
@@ -373,18 +382,14 @@ Sentiment was inverted (nonsense scored 0.998), direction was sign-based positiv
 | `TIMEOUT_SEARCH` | `30` | Search RPC timeout (seconds) |
 | `TIMEOUT_STORE` | `15` | StoreEvidence RPC timeout (seconds) |
 | `TIMEOUT_EMBED` | `15` | Embed RPC timeout (seconds) |
-| `WEB_SEARCH_ENABLED` | `true` | Enable web search fallback |
-| `WEB_SEARCH_MAX_RESULTS` | `3` | Max web search results |
-| `WEB_SEARCH_TIMEOUT` | `10` | Web search timeout (seconds) |
-| `WEB_SEARCH_ENTROPY_THRESHOLD` | `0.3` | Entropy threshold to trigger web search |
 
 ### Python Service
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `GRPC_PORT` | `50051` | gRPC server listen port |
-| `OLLAMA_MODEL` | `phi4-mini` | Generation model |
-| `EMBED_MODEL` | `phi4-mini` | Embedding model (can differ from gen) |
+| `OLLAMA_MODEL` | `qwen3-4b` | Generation model |
+| `EMBED_MODEL` | `qwen3-embedding:0.6b` | Embedding model (can differ from gen) |
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API base URL |
 | `MEMORY_PERSIST_DIR` | `./chroma_data` | ChromaDB persistence directory |
 
@@ -449,9 +454,9 @@ gen/adaptive/adaptive_grpc.pb.go     Generated gRPC stubs
 
 ```
 adaptive_inference/server.py         gRPC servicer (threaded asyncio loop)
-adaptive_inference/service.py        InferenceService (state conditioning, entropy)
+adaptive_inference/service.py        InferenceService (chat+tools, DDGS search, think-only handling)
 adaptive_inference/memory.py         MemoryStore (ChromaDB wrapper)
-adaptive_inference/ollama_client.py  Ollama HTTP client (generate, embed)
+adaptive_inference/ollama_client.py  Ollama HTTP client (generate, embed, chat)
 adaptive_inference/proto/            Generated Python protobuf stubs
 
 tests/test_service.py               Service integration tests
@@ -474,7 +479,7 @@ STRUCTURE.md                         Architecture reference, conventions
 
 - Go 1.25+
 - Python 3.11+
-- Ollama running locally with `phi4-mini` pulled
+- Ollama running locally with `qwen3-4b` and `qwen3-embedding:0.6b` pulled
 - `protoc` + Go/Python gRPC plugins (for proto regeneration only)
 
 ### Quick Start
@@ -526,6 +531,9 @@ go run ./cmd/replay/ --db adaptive_state.db
 ## Commit History
 
 ```
+81dc435 Native tool calling: Python service becomes generation brain with DDGS web search
+8d078ca Fix detection heuristics and add web search empty-results logging
+a4786f0 Update PROJECT_RECORD.md with semantic learning milestone, test results, and observe-phase guidance
 226e9ac Fix preferences table migration for pre-existing DBs missing style column
 670b377 Wire semantic learning priorities: compliance scoring, direction vectors, instruction-only prompts, goals-adjusted retrieval  ← semantic-learning-v1
 c864a20 Add state→prompt projection to close the adaptive feedback loop
@@ -573,6 +581,56 @@ f227188 Phase 4: Add signal-driven state learning with per-element decay
 c4fcf0c Phase 1: Adaptive Disposition Layer skeleton
 ```
 
+## Agent Personality Training
+
+**File**: `daniel_v7_training.jsonl` (642 examples, JSONL format for Ollama/OpenAI fine-tuning)
+
+The adaptive agent is trained with a consistent personality via supervised fine-tuning data. All examples share the same system prompt and cover the full range of conversational situations the agent encounters.
+
+### System Prompt
+
+> You are Daniel's thinking partner. Warm but direct. SHORT. DIRECT. No numbered lists. No fluff, but not cold either. Friendly and real, like a trusted colleague who respects his intelligence. If you don't know a factual answer, say so. Build on what he says. Fragments over paragraphs. When Daniel wants to talk and explore ideas, stay in the conversation. Don't redirect to tasks. Match his energy.
+
+### Training Categories (642 examples)
+
+| Category | Count | Purpose |
+|----------|-------|---------|
+| Cognitive patterns | ~88 | Mode 1 (explore) / Mode 2 (build) cycle, pattern recognition, intuition validation |
+| Debugging patterns | ~48 | Systematic elimination, "what have you ruled out?", trace-the-path reasoning |
+| Conversational flow | ~37 | Short acknowledgments, turn-taking, holding space ("Take your time. I'm here.") |
+| Scope discipline | ~35 | Manifest-first workflow, scope violations, "I didn't ask for that" corrections |
+| Tool friction | ~35 | Recognizing tool limitations vs skill limitations, context loss, version issues |
+| Technical explanations | ~27 | Concise explanations (webhooks, OAuth, Docker, DNS) with follow-up questions |
+| Brevity training | ~18 | "Stop over-explaining", "compress it", "just the bottom line" |
+| Work values / alignment | ~17 | Belief + Significance themes, effort-outcome alignment, principled boundaries |
+| Self-worth / identity | ~14 | Imposter syndrome responses, pricing work, "using AI well IS the skill" |
+| Other (mixed) | ~323 | General conversation, encouragement, task management, real session fragments |
+
+### Key Personality Traits Trained
+
+- **Brevity**: Fragments over paragraphs. One-line answers when possible.
+- **Respect**: Never explain basics unless asked. Assume intelligence.
+- **Scope discipline**: Report findings, don't fix them. Manifest → approval → execute.
+- **Cognitive framing**: Mode 1 (explore/decode) and Mode 2 (build/execute) as explicit states.
+- **Pattern recognition**: "Your gut is compressed pattern recognition." Validates intuitive leaps.
+- **Tool awareness**: Separates user capability from tool limitations. "The bottleneck was never you."
+- **Follow-up questions**: Almost every response ends with a clarifying question or next-step prompt.
+
+### Training Format
+
+Standard JSONL for fine-tuning (compatible with Ollama `create`, OpenAI fine-tune API):
+```json
+{"messages": [
+  {"role": "system", "content": "You are Daniel's thinking partner..."},
+  {"role": "user", "content": "I tried three different approaches and none worked."},
+  {"role": "assistant", "content": "What were the three? The pattern of what failed tells me more than the problem itself."}
+]}
+```
+
+### Colab Training Notebook
+
+Training was performed via Google Colab: `https://colab.research.google.com/drive/10nu17ShpdXU__YpZSczDm7RCRXvrwu1E`
+
 ## For Anyone Continuing This Work
 
 ### What's solid
@@ -591,13 +649,15 @@ The `MaxStateNorm=3.0` cap is the primary safeguard. Decay on unreinforced segme
 
 ### What to explore next
 
-1. **Long-running drift observation**: Run 20+ turn sessions with varied preferences. Watch for norm saturation, style lock-in, or projection over-influence.
+1. **Long-running drift observation**: Run 20+ turn sessions with varied preferences. Watch for norm saturation, style lock-in, or projection over-influence. Mix factual and casual queries to exercise both tool-call and non-tool-call paths.
 
-2. **Threshold tuning via replay**: Use `cmd/replay/` with different configs to find optimal gate/eval thresholds. The fixture system makes this cheap — no live model needed.
+2. **Qwen3 reasoning mode toggle**: Disable reasoning (`/no_think`) for casual prompts to eliminate think-only failures entirely. Keep reasoning enabled for factual queries where tool calling benefits from chain-of-thought.
 
-3. **REST API layer**: FastAPI + Uvicorn stubs are already in py-inference dependencies. Would enable web UI or external integrations.
+3. **Threshold tuning via replay**: Use `cmd/replay/` with different configs to find optimal gate/eval thresholds. The fixture system makes this cheap — no live model needed.
 
-4. **Larger models**: The architecture is model-agnostic. Swap `OLLAMA_MODEL` for any Ollama-supported model. Larger models may need threshold recalibration.
+4. **REST API layer**: FastAPI + Uvicorn stubs are already in py-inference dependencies. Would enable web UI or external integrations.
+
+5. **Larger models**: The architecture is model-agnostic. Swap `OLLAMA_MODEL` for any Ollama-supported model. Larger models may need threshold recalibration.
 
 ### Key constraints to respect
 
