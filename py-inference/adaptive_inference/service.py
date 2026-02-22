@@ -218,11 +218,13 @@ class InferenceService:
 
         lines = []
 
-        # Behavioral rules go FIRST in system prompt (highest authority)
+        # When behavioral rules are present, they are the ENTIRE system prompt.
+        # No tool instructions, no evidence — just the rule. Maximum compliance.
         if rules:
             for rule_block in rules:
                 lines.append(rule_block)
-            lines.append("")
+            lines.append("Output ONLY the required response. Nothing else.")
+            return "\n".join(lines)
 
         lines.append(
             "You have access to a web_search tool. You MUST use the web_search tool for any factual question (phone numbers, addresses, URLs, statistics, dates, current events). NEVER answer factual questions from memory — always search first. For casual conversation, respond normally without searching."
