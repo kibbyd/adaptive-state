@@ -108,7 +108,6 @@ func main() {
 	// Phase 5: Heuristic signal producer
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
-	var ollamaCtx []int64
 	session := SessionState{}
 
 	fmt.Println("Adaptive State Controller ready.")
@@ -241,13 +240,12 @@ func main() {
 		} else {
 			// Step 2: First-pass Generate to get entropy (rules always injected)
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, ruleEvidence, ollamaCtx)
+			result, err = codecClient.Generate(ctx, wrappedPrompt, current.StateVector, ruleEvidence, nil)
 			cancel()
 			if err != nil {
 				log.Printf("codec error: %v", err)
 				continue
 			}
-			ollamaCtx = result.Context
 
 			// Step 3: Triple-gated retrieval with goals-adjusted threshold
 			retCfg := retrieval.DefaultConfig()
@@ -270,13 +268,12 @@ func main() {
 				// Re-generate with evidence injected (rules prepended)
 				allEvidence := append(ruleEvidence, evidenceStrings...)
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, allEvidence, ollamaCtx)
+				result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, allEvidence, nil)
 				cancel3()
 				if err != nil {
 					log.Printf("re-generate error: %v", err)
 					continue
 				}
-				ollamaCtx = result.Context
 			} else {
 				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 			}
