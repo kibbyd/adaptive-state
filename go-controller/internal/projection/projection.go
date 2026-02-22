@@ -50,6 +50,8 @@ func NewPreferenceStore(db *sql.DB) (*PreferenceStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create preferences table: %w", err)
 	}
+	// Migrate: add style column if missing (pre-existing tables lack it)
+	_, _ = db.Exec(`ALTER TABLE preferences ADD COLUMN style TEXT NOT NULL DEFAULT 'general'`)
 	return &PreferenceStore{db: db}, nil
 }
 
