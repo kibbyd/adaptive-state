@@ -249,6 +249,8 @@ func main() {
 						continue
 					}
 					ollamaCtx = result.Context
+				} else {
+					log.Printf("[%s] web search: DDGS returned 0 results", turnID)
 				}
 			}
 

@@ -115,8 +115,8 @@ func (s *PreferenceStore) List() ([]Preference, error) {
 
 // #region detect
 
-// prefixPatterns are phrases that signal an explicit preference statement.
-var prefixPatterns = []string{
+// containsPatterns match anywhere in the text (low false-positive risk).
+var containsPatterns = []string{
 	"i prefer",
 	"i like",
 	"i want",
@@ -124,10 +124,6 @@ var prefixPatterns = []string{
 	"i'd like",
 	"i would like",
 	"please always",
-	"always ",
-	"never ",
-	"don't ",
-	"do not ",
 	"keep it",
 	"make it",
 	"be more",
@@ -141,6 +137,24 @@ var prefixPatterns = []string{
 	"verbose answers",
 }
 
+// startPatterns only match at the start of input (high false-positive risk if used as contains).
+var startPatterns = []string{
+	"always ",
+	"never ",
+	"don't use",
+	"don't give",
+	"don't include",
+	"don't add",
+	"don't ever",
+	"don't be",
+	"do not use",
+	"do not give",
+	"do not include",
+	"do not add",
+	"do not ever",
+	"do not be",
+}
+
 // DetectPreference checks if a prompt contains an explicit preference statement.
 // Returns the normalized preference text and true if detected, empty and false otherwise.
 func DetectPreference(prompt string) (string, bool) {
@@ -149,11 +163,16 @@ func DetectPreference(prompt string) (string, bool) {
 		return "", false
 	}
 
-	for _, pat := range prefixPatterns {
+	for _, pat := range containsPatterns {
 		if strings.Contains(lower, pat) {
-			// Use the original prompt text, cleaned up
 			cleaned := strings.TrimSpace(prompt)
-			// Remove trailing punctuation for storage
+			cleaned = strings.TrimRight(cleaned, ".!?")
+			return cleaned, true
+		}
+	}
+	for _, pat := range startPatterns {
+		if strings.HasPrefix(lower, pat) {
+			cleaned := strings.TrimSpace(prompt)
 			cleaned = strings.TrimRight(cleaned, ".!?")
 			return cleaned, true
 		}
@@ -169,6 +188,12 @@ func DetectCorrection(prompt string) bool {
 		"try again",
 		"that's wrong",
 		"that is wrong",
+		"that's not",
+		"that is not",
+		"not correct",
+		"incorrect",
+		"wrong ",
+		"nope",
 		"no,",
 		"no i meant",
 		"not what i",
