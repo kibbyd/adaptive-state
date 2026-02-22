@@ -4,7 +4,7 @@ import httpx
 
 # #region config
 DEFAULT_BASE_URL = "http://localhost:11434"
-DEFAULT_MODEL = "qwen3:4b"
+DEFAULT_MODEL = "qwen3-4b"
 # #endregion config
 
 
@@ -53,3 +53,30 @@ async def embed(
         # Ollama returns {"embeddings": [[...]]}
         return data["embeddings"][0]
 # #endregion embed
+
+
+# #region chat
+async def chat(
+    messages: list[dict],
+    system: str = "",
+    tools: list[dict] | None = None,
+    model: str = DEFAULT_MODEL,
+    base_url: str = DEFAULT_BASE_URL,
+) -> dict:
+    """Call Ollama /api/chat with optional tools and return the response dict."""
+    payload = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+    }
+    if system:
+        payload["messages"] = [{"role": "system", "content": system}] + payload["messages"]
+    if tools:
+        payload["tools"] = tools
+    payload["options"] = {"num_predict": 512}
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.post(f"{base_url}/api/chat", json=payload)
+        resp.raise_for_status()
+        return resp.json()
+# #endregion chat

@@ -26,7 +26,7 @@ class SearchResult:
 class MemoryStore:
     """Wraps ChromaDB for storing and searching evidence documents."""
 
-    def __init__(self, persist_dir: str, collection_name: str = "evidence", embed_model: str = "phi4-mini"):
+    def __init__(self, persist_dir: str, collection_name: str = "evidence", embed_model: str = "qwen3-embedding:0.6b"):
         self._client = chromadb.PersistentClient(path=persist_dir)
         self._collection = self._client.get_or_create_collection(
             name=collection_name,

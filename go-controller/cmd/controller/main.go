@@ -21,7 +21,6 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/signals"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/update"
-	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/websearch"
 )
 
 // #region main
@@ -76,9 +75,6 @@ func main() {
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
 	var ollamaCtx []int64
-
-	// Web search fallback config
-	webSearchCfg := websearch.DefaultConfig()
 
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
@@ -217,41 +213,6 @@ func main() {
 				ollamaCtx = result.Context
 			} else {
 				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
-			}
-
-			// Web search fallback: search when no usable evidence exists
-			noUsableEvidence := len(evidenceStrings) == 0
-			coherenceFiltered := gateResult.Gate2Count > 0 && gateResult.Gate3Count == 0
-			highEntropy := float64(result.Entropy) > webSearchCfg.EntropyThreshold
-			if (coherenceFiltered || (noUsableEvidence && highEntropy)) && webSearchCfg.Enabled {
-				log.Printf("[%s] web search triggered: noEvidence=%v coherenceFiltered=%v entropy=%.4f",
-					turnID, noUsableEvidence, coherenceFiltered, result.Entropy)
-				webCtx, webCancel := context.WithTimeout(context.Background(), webSearchCfg.Timeout)
-				grpcResults, webErr := codecClient.WebSearch(webCtx, prompt, webSearchCfg.MaxResults)
-				webCancel()
-				if webErr != nil {
-					log.Printf("[%s] web search error (non-fatal): %v", turnID, webErr)
-				} else if len(grpcResults) > 0 {
-					webResults := make([]websearch.Result, len(grpcResults))
-					for i, r := range grpcResults {
-						webResults[i] = websearch.Result{Title: r.Title, Snippet: r.Snippet, URL: r.URL}
-					}
-					webEvidence := websearch.FormatAsEvidence(webResults)
-					evidenceStrings = append(evidenceStrings, webEvidence)
-					log.Printf("[%s] web search: injected %d results", turnID, len(grpcResults))
-
-					// Re-generate with web search evidence
-					webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
-					result, err = codecClient.Generate(webGenCtx, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
-					webGenCancel()
-					if err != nil {
-						log.Printf("web re-generate error: %v", err)
-						continue
-					}
-					ollamaCtx = result.Context
-				} else {
-					log.Printf("[%s] web search: DDGS returned 0 results", turnID)
-				}
 			}
 
 			fmt.Printf("\n%s\n\n", result.Text)

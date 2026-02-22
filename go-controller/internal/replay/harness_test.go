@@ -106,6 +106,7 @@ func TestReplay_EvalRollback(t *testing.T) {
 	start := seededState("v0", 2.0) // large initial values
 	inter := commitInteraction("turn-1")
 	config := DefaultReplayConfig()
+	config.UpdateConfig.MaxStateNorm = 0 // disable update normalization so state stays large
 	config.EvalConfig.MaxStateNorm = 0.001 // impossibly tight threshold
 
 	results := Replay(start, interactions(inter), config)

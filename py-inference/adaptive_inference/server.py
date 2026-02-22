@@ -130,7 +130,7 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
                      request.query[:50] if request.query else "", request.max_results)
 
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
 
             max_results = request.max_results if request.max_results > 0 else 3
             with DDGS() as ddgs:
