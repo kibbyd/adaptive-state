@@ -16,6 +16,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/eval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/projection"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/retrieval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/signals"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/state"
@@ -49,6 +50,12 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to create initial state: %v", err)
 		}
+	}
+
+	// Initialize preference store (uses same DB)
+	prefStore, err := projection.NewPreferenceStore(store.DB())
+	if err != nil {
+		log.Fatalf("failed to init preference store: %v", err)
 	}
 
 	// Connect to Python inference service
@@ -101,6 +108,20 @@ func main() {
 			continue
 		}
 
+		// Detect and store explicit preferences
+		if prefText, detected := projection.DetectPreference(prompt); detected {
+			if err := prefStore.Add(prefText, "explicit"); err != nil {
+				log.Printf("preference store error: %v", err)
+			} else {
+				log.Printf("preference stored: %q", prefText)
+			}
+		}
+		// Detect corrections — also flag for gate veto
+		if projection.DetectCorrection(prompt) {
+			userCorrected = true
+			log.Printf("correction detected in prompt")
+		}
+
 		turnNum++
 		turnID := fmt.Sprintf("turn-%d", turnNum)
 
@@ -121,9 +142,22 @@ func main() {
 			log.Printf("[%s] WARN state_norm=%.4f > 4.0 — approaching over-bias zone", turnID, stateNorm)
 		}
 
+		// Build adaptive state prompt block from stored preferences + prefs segment norm
+		prefsNorm := float32(0)
+		for i := current.SegmentMap.Prefs[0]; i < current.SegmentMap.Prefs[1]; i++ {
+			prefsNorm += current.StateVector[i] * current.StateVector[i]
+		}
+		prefsNorm = float32(math.Sqrt(float64(prefsNorm)))
+		storedPrefs, _ := prefStore.List()
+		stateBlock := projection.ProjectToPrompt(storedPrefs, prefsNorm)
+		wrappedPrompt := projection.WrapPrompt(stateBlock, prompt)
+		if stateBlock != "" {
+			log.Printf("[%s] state projection: %d prefs, prefs_norm=%.4f", turnID, len(storedPrefs), prefsNorm)
+		}
+
 		// Step 2: First-pass Generate to get entropy
 		ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil, ollamaCtx)
+		result, err := codecClient.Generate(ctx, wrappedPrompt, current.StateVector, nil, ollamaCtx)
 		cancel()
 		if err != nil {
 			log.Printf("codec error: %v", err)
@@ -148,7 +182,7 @@ func main() {
 
 			// Re-generate with evidence injected
 			ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx3, prompt, current.StateVector, evidenceStrings, ollamaCtx)
+			result, err = codecClient.Generate(ctx3, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
 			cancel3()
 			if err != nil {
 				log.Printf("re-generate error: %v", err)
@@ -185,7 +219,7 @@ func main() {
 
 				// Re-generate with web search evidence
 				webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(webGenCtx, prompt, current.StateVector, evidenceStrings, ollamaCtx)
+				result, err = codecClient.Generate(webGenCtx, wrappedPrompt, current.StateVector, evidenceStrings, ollamaCtx)
 				webGenCancel()
 				if err != nil {
 					log.Printf("web re-generate error: %v", err)
