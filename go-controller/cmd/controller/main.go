@@ -40,8 +40,10 @@ func isRuleContinuation(input string) bool {
 	if !strings.HasPrefix(lower, "who") && strings.Contains(lower, " who ") && len(lower) < 60 {
 		return true
 	}
-	// Very short punchlines only (e.g. "haha", "good one", "lol")
-	if len(lower) < 20 {
+	// Very short reactions only (e.g. "haha", "good one", "lol", "nice one")
+	// Exclude question-word starts ("who is...", "what is...")
+	words := strings.Fields(lower)
+	if len(words) <= 3 && !strings.HasPrefix(lower, "who") && !strings.HasPrefix(lower, "what") && !strings.HasPrefix(lower, "how") && !strings.HasPrefix(lower, "why") {
 		return true
 	}
 	return false
