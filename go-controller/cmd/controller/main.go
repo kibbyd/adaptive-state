@@ -23,6 +23,29 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/update"
 )
 
+// #region session-state
+type SessionState struct {
+	RuleActive   bool
+	LastRuleTurn int
+}
+
+func isRuleContinuation(input string) bool {
+	lower := strings.ToLower(strings.TrimSpace(input))
+	if strings.Contains(lower, "knock") {
+		return true
+	}
+	if strings.Contains(lower, "who") && len(lower) < 60 {
+		return true
+	}
+	// Short punchline-style responses (e.g. "Daniel who codes all night")
+	if len(lower) < 40 {
+		return true
+	}
+	return false
+}
+
+// #endregion session-state
+
 // #region main
 func main() {
 	dbPath := envOr("ADAPTIVE_DB", "adaptive_state.db")
@@ -81,6 +104,7 @@ func main() {
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
 	var ollamaCtx []int64
+	session := SessionState{}
 
 	fmt.Println("Adaptive State Controller ready.")
 	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
@@ -181,7 +205,17 @@ func main() {
 		if len(matchedRules) > 0 {
 			rulesBlock := projection.FormatRulesBlock(matchedRules)
 			ruleEvidence = append(ruleEvidence, rulesBlock)
-			log.Printf("[%s] rules matched: %d for input %q", turnID, len(matchedRules), prompt)
+			session.RuleActive = true
+			session.LastRuleTurn = turnNum
+			log.Printf("[%s] rules matched: %d for input %q (rule context locked)", turnID, len(matchedRules), prompt)
+		} else if session.RuleActive {
+			// Release lock when input no longer matches rule continuation pattern
+			if !isRuleContinuation(prompt) {
+				session.RuleActive = false
+				log.Printf("[%s] rule context released (non-continuation input)", turnID)
+			} else {
+				log.Printf("[%s] rule context active (continuation detected)", turnID)
+			}
 		}
 
 		// Variables that may be populated by generation or skipped for instruction-only prompts
@@ -246,13 +280,18 @@ func main() {
 		}
 
 		// Step 4: Store this interaction as evidence for future retrieval
-		storeText := prompt + "\n" + result.Text
-		metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f}`, turnID, result.Entropy)
-		ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
-		_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
-		cancel4()
-		if storeErr != nil {
-			log.Printf("store evidence error (non-fatal): %v", storeErr)
+		// Skip storage for rule-triggered, preference-only, and rule-context turns
+		if !isPreferenceOnly && len(matchedRules) == 0 && !session.RuleActive {
+			storeText := prompt + "\n" + result.Text
+			now := time.Now().UTC()
+			metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f,"stored_at":"%s"}`,
+				turnID, result.Entropy, now.Format(time.RFC3339))
+			ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
+			_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
+			cancel4()
+			if storeErr != nil {
+				log.Printf("store evidence error (non-fatal): %v", storeErr)
+			}
 		}
 
 		// Step 5: Run update function (produces proposed state + metrics)
