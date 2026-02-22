@@ -31,14 +31,17 @@ type SessionState struct {
 
 func isRuleContinuation(input string) bool {
 	lower := strings.ToLower(strings.TrimSpace(input))
+	// Direct knock-knock continuation
 	if strings.Contains(lower, "knock") {
 		return true
 	}
-	if strings.Contains(lower, "who") && len(lower) < 60 {
+	// Punchline pattern: "<name> who <punchline>" (e.g. "Daniel who codes all night")
+	// Must start with a word followed by "who" — not question-word "who is..."
+	if !strings.HasPrefix(lower, "who") && strings.Contains(lower, " who ") && len(lower) < 60 {
 		return true
 	}
-	// Short punchline-style responses (e.g. "Daniel who codes all night")
-	if len(lower) < 40 {
+	// Very short punchlines only (e.g. "haha", "good one", "lol")
+	if len(lower) < 20 {
 		return true
 	}
 	return false
