@@ -34,6 +34,10 @@ func (m *mockCodecService) StoreEvidence(_ context.Context, _ *pb.StoreEvidenceR
 	return nil, nil
 }
 
+func (m *mockCodecService) WebSearch(_ context.Context, _ *pb.WebSearchRequest, _ ...grpc.CallOption) (*pb.WebSearchResponse, error) {
+	return nil, nil
+}
+
 // #endregion mock
 
 // #region gate1-tests
@@ -193,7 +197,7 @@ func TestRetrieve_AlwaysRetrieveBypassesGate1(t *testing.T) {
 	mock := &mockCodecService{
 		searchResp: &pb.SearchResponse{
 			Results: []*pb.SearchResult{
-				{Id: "a", Text: "recalled evidence", Score: 0.9},
+				{Id: "a", Text: "recalled talk about earlier topics", Score: 0.9},
 			},
 		},
 	}
@@ -202,7 +206,7 @@ func TestRetrieve_AlwaysRetrieveBypassesGate1(t *testing.T) {
 	cfg.EntropyThreshold = 2.0 // would block if checked
 	r := NewRetriever(cc, cfg)
 
-	result, err := r.Retrieve(context.Background(), "what did we talk about", 0.1)
+	result, err := r.Retrieve(context.Background(), "topics we talked about earlier", 0.1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -280,7 +284,7 @@ func TestRetrieve_Gate3AllFiltered(t *testing.T) {
 	if result.Gate3Count != 0 {
 		t.Errorf("expected 0 gate3 results, got %d", result.Gate3Count)
 	}
-	if result.Reason != "gate3: all results failed consistency check" {
+	if result.Reason != "gate3: all results failed consistency/coherence check" {
 		t.Errorf("unexpected reason: %q", result.Reason)
 	}
 }
@@ -289,8 +293,8 @@ func TestRetrieve_FullSuccess(t *testing.T) {
 	mock := &mockCodecService{
 		searchResp: &pb.SearchResponse{
 			Results: []*pb.SearchResult{
-				{Id: "a", Text: "evidence alpha", Score: 0.95, MetadataJson: `{"src":"test"}`},
-				{Id: "b", Text: "evidence beta", Score: 0.85, MetadataJson: ""},
+				{Id: "a", Text: "alpha beta results here", Score: 0.95, MetadataJson: `{"src":"test"}`},
+				{Id: "b", Text: "beta testing outcomes", Score: 0.85, MetadataJson: ""},
 			},
 		},
 	}
@@ -299,7 +303,7 @@ func TestRetrieve_FullSuccess(t *testing.T) {
 	cfg.EntropyThreshold = 0.1
 	r := NewRetriever(cc, cfg)
 
-	result, err := r.Retrieve(context.Background(), "prompt", 1.0)
+	result, err := r.Retrieve(context.Background(), "alpha beta testing", 1.0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -318,9 +322,147 @@ func TestRetrieve_FullSuccess(t *testing.T) {
 	if result.Retrieved[0].ID != "a" {
 		t.Errorf("expected first result ID 'a', got %q", result.Retrieved[0].ID)
 	}
-	if result.Retrieved[0].Text != "evidence alpha" {
-		t.Errorf("expected first result text 'evidence alpha', got %q", result.Retrieved[0].Text)
+	if result.Retrieved[0].Text != "alpha beta results here" {
+		t.Errorf("expected first result text 'alpha beta results here', got %q", result.Retrieved[0].Text)
+	}
+}
+
+func TestRetrieve_CoherenceFiltersAll(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{
+			Results: []*pb.SearchResult{
+				{Id: "a", Text: "weather forecast tomorrow sunny", Score: 0.9},
+				{Id: "b", Text: "recipe cooking pasta dinner", Score: 0.8},
+			},
+		},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "seashells beach ocean", 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Gate2Count != 2 {
+		t.Errorf("expected 2 gate2 results, got %d", result.Gate2Count)
+	}
+	if result.Gate3Count != 0 {
+		t.Errorf("expected 0 gate3 results after coherence filter, got %d", result.Gate3Count)
+	}
+}
+
+func TestRetrieve_CoherencePassesRelevant(t *testing.T) {
+	mock := &mockCodecService{
+		searchResp: &pb.SearchResponse{
+			Results: []*pb.SearchResult{
+				{Id: "a", Text: "seashells found on the beach near the ocean", Score: 0.9},
+				{Id: "b", Text: "recipe cooking pasta dinner", Score: 0.8},
+			},
+		},
+	}
+	cc := codec.NewCodecClientWithService(mock)
+	cfg := DefaultConfig()
+	r := NewRetriever(cc, cfg)
+
+	result, err := r.Retrieve(context.Background(), "seashells beach ocean", 1.0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Gate3Count != 1 {
+		t.Errorf("expected 1 gate3 result, got %d", result.Gate3Count)
+	}
+	if result.Retrieved[0].ID != "a" {
+		t.Errorf("expected surviving result ID 'a', got %q", result.Retrieved[0].ID)
 	}
 }
 
 // #endregion retriever-tests
+
+// #region topic-coherence-tests
+func TestTokenize(t *testing.T) {
+	tokens := tokenize("Can you tell me where she sells seashells?")
+	// "can", "you", "tell", "me", "where", "she", "sells" are stopwords or short
+	// "seashells" should survive
+	found := false
+	for _, tok := range tokens {
+		if tok == "seashells" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'seashells' in tokens, got %v", tokens)
+	}
+}
+
+func TestTokenize_Deduplicates(t *testing.T) {
+	tokens := tokenize("beach beach beach ocean")
+	count := 0
+	for _, tok := range tokens {
+		if tok == "beach" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected 'beach' once, got %d times in %v", count, tokens)
+	}
+}
+
+func TestSharedKeywords(t *testing.T) {
+	a := []string{"seashells", "beach", "ocean"}
+	b := []string{"beach", "sunset", "sand"}
+	shared := sharedKeywords(a, b)
+	if shared != 1 {
+		t.Errorf("expected 1 shared keyword, got %d", shared)
+	}
+}
+
+func TestSharedKeywords_None(t *testing.T) {
+	a := []string{"seashells", "beach"}
+	b := []string{"weather", "forecast"}
+	shared := sharedKeywords(a, b)
+	if shared != 0 {
+		t.Errorf("expected 0 shared keywords, got %d", shared)
+	}
+}
+
+func TestTopicCoherenceFilter_EmptyPromptTokens(t *testing.T) {
+	r := &Retriever{config: DefaultConfig()}
+	// All stopwords prompt — filter should pass everything through
+	results := []EvidenceRecord{
+		{ID: "1", Text: "anything here", Score: 0.9},
+	}
+	filtered := r.topicCoherenceFilter("the is a an", results)
+	if len(filtered) != 1 {
+		t.Errorf("expected all results to pass when prompt has no content words, got %d", len(filtered))
+	}
+}
+
+func TestTopicCoherenceFilter_RejectsIrrelevant(t *testing.T) {
+	r := &Retriever{config: DefaultConfig()}
+	results := []EvidenceRecord{
+		{ID: "1", Text: "weather forecast tomorrow", Score: 0.9},
+		{ID: "2", Text: "cooking recipe pasta", Score: 0.8},
+	}
+	filtered := r.topicCoherenceFilter("seashells beach ocean", results)
+	if len(filtered) != 0 {
+		t.Errorf("expected 0 results, got %d", len(filtered))
+	}
+}
+
+func TestTopicCoherenceFilter_KeepsRelevant(t *testing.T) {
+	r := &Retriever{config: DefaultConfig()}
+	results := []EvidenceRecord{
+		{ID: "1", Text: "seashells found near the ocean shore", Score: 0.9},
+		{ID: "2", Text: "cooking recipe pasta", Score: 0.8},
+	}
+	filtered := r.topicCoherenceFilter("seashells beach ocean", results)
+	if len(filtered) != 1 {
+		t.Errorf("expected 1 result, got %d", len(filtered))
+	}
+	if filtered[0].ID != "1" {
+		t.Errorf("expected ID '1', got %q", filtered[0].ID)
+	}
+}
+
+// #endregion topic-coherence-tests

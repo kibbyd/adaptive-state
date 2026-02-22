@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
     """gRPC servicer that delegates to InferenceService."""
 
-    def __init__(self, inference_service: InferenceService, memory_store: MemoryStore, embed_model: str = "phi4-mini"):
+    def __init__(self, inference_service: InferenceService, memory_store: MemoryStore, embed_model: str = "qwen3-embedding:0.6b"):
         self._service = inference_service
         self._memory = memory_store
         self._embed_model = embed_model
@@ -123,6 +123,32 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             return pb2.StoreEvidenceResponse()
+
+    def WebSearch(self, request, context):
+        """Handle WebSearch RPC — search the web using DDGS."""
+        logger.info("WebSearch called: query=%s..., max_results=%d",
+                     request.query[:50] if request.query else "", request.max_results)
+
+        try:
+            from duckduckgo_search import DDGS
+
+            max_results = request.max_results if request.max_results > 0 else 3
+            with DDGS() as ddgs:
+                raw = list(ddgs.text(request.query, max_results=max_results))
+
+            results = []
+            for r in raw:
+                results.append(pb2.WebSearchResult(
+                    title=r.get("title", ""),
+                    snippet=r.get("body", ""),
+                    url=r.get("href", ""),
+                ))
+            return pb2.WebSearchResponse(results=results)
+        except Exception as e:
+            logger.error("WebSearch error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.WebSearchResponse()
 # #endregion grpc-servicer
 
 
@@ -132,8 +158,8 @@ def serve():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     port = os.environ.get("GRPC_PORT", "50051")
-    model = os.environ.get("OLLAMA_MODEL", "phi4-mini")
-    embed_model = os.environ.get("EMBED_MODEL", "phi4-mini")
+    model = os.environ.get("OLLAMA_MODEL", "qwen3-4b")
+    embed_model = os.environ.get("EMBED_MODEL", "qwen3-embedding:0.6b")
     ollama_url = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 
     persist_dir = os.environ.get("MEMORY_PERSIST_DIR", "./chroma_data")

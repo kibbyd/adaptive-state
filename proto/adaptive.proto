@@ -10,6 +10,7 @@ service CodecService {
   rpc Embed(EmbedRequest) returns (EmbedResponse);
   rpc Search(SearchRequest) returns (SearchResponse);
   rpc StoreEvidence(StoreEvidenceRequest) returns (StoreEvidenceResponse);
+  rpc WebSearch(WebSearchRequest) returns (WebSearchResponse);
 }
 // #endregion service-definition
 
@@ -61,5 +62,20 @@ message StoreEvidenceRequest {
 
 message StoreEvidenceResponse {
   string id = 1;
+}
+
+message WebSearchRequest {
+  string query = 1;
+  int32 max_results = 2;
+}
+
+message WebSearchResult {
+  string title = 1;
+  string snippet = 2;
+  string url = 3;
+}
+
+message WebSearchResponse {
+  repeated WebSearchResult results = 1;
 }
 // #endregion messages

@@ -522,6 +522,162 @@ func (x *StoreEvidenceResponse) GetId() string {
 	return ""
 }
 
+type WebSearchRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Query         string                 `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
+	MaxResults    int32                  `protobuf:"varint,2,opt,name=max_results,json=maxResults,proto3" json:"max_results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebSearchRequest) Reset() {
+	*x = WebSearchRequest{}
+	mi := &file_adaptive_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebSearchRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebSearchRequest) ProtoMessage() {}
+
+func (x *WebSearchRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebSearchRequest.ProtoReflect.Descriptor instead.
+func (*WebSearchRequest) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *WebSearchRequest) GetQuery() string {
+	if x != nil {
+		return x.Query
+	}
+	return ""
+}
+
+func (x *WebSearchRequest) GetMaxResults() int32 {
+	if x != nil {
+		return x.MaxResults
+	}
+	return 0
+}
+
+type WebSearchResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Snippet       string                 `protobuf:"bytes,2,opt,name=snippet,proto3" json:"snippet,omitempty"`
+	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebSearchResult) Reset() {
+	*x = WebSearchResult{}
+	mi := &file_adaptive_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebSearchResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebSearchResult) ProtoMessage() {}
+
+func (x *WebSearchResult) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebSearchResult.ProtoReflect.Descriptor instead.
+func (*WebSearchResult) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *WebSearchResult) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *WebSearchResult) GetSnippet() string {
+	if x != nil {
+		return x.Snippet
+	}
+	return ""
+}
+
+func (x *WebSearchResult) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type WebSearchResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*WebSearchResult     `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WebSearchResponse) Reset() {
+	*x = WebSearchResponse{}
+	mi := &file_adaptive_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WebSearchResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WebSearchResponse) ProtoMessage() {}
+
+func (x *WebSearchResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WebSearchResponse.ProtoReflect.Descriptor instead.
+func (*WebSearchResponse) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *WebSearchResponse) GetResults() []*WebSearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
 var File_adaptive_proto protoreflect.FileDescriptor
 
 const file_adaptive_proto_rawDesc = "" +
@@ -558,12 +714,23 @@ const file_adaptive_proto_rawDesc = "" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12#\n" +
 	"\rmetadata_json\x18\x02 \x01(\tR\fmetadataJson\"'\n" +
 	"\x15StoreEvidenceResponse\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id2\x9a\x02\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"I\n" +
+	"\x10WebSearchRequest\x12\x14\n" +
+	"\x05query\x18\x01 \x01(\tR\x05query\x12\x1f\n" +
+	"\vmax_results\x18\x02 \x01(\x05R\n" +
+	"maxResults\"S\n" +
+	"\x0fWebSearchResult\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x18\n" +
+	"\asnippet\x18\x02 \x01(\tR\asnippet\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\"H\n" +
+	"\x11WebSearchResponse\x123\n" +
+	"\aresults\x18\x01 \x03(\v2\x19.adaptive.WebSearchResultR\aresults2\xe0\x02\n" +
 	"\fCodecService\x12A\n" +
 	"\bGenerate\x12\x19.adaptive.GenerateRequest\x1a\x1a.adaptive.GenerateResponse\x128\n" +
 	"\x05Embed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponse\x12;\n" +
 	"\x06Search\x12\x17.adaptive.SearchRequest\x1a\x18.adaptive.SearchResponse\x12P\n" +
-	"\rStoreEvidence\x12\x1e.adaptive.StoreEvidenceRequest\x1a\x1f.adaptive.StoreEvidenceResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
+	"\rStoreEvidence\x12\x1e.adaptive.StoreEvidenceRequest\x1a\x1f.adaptive.StoreEvidenceResponse\x12D\n" +
+	"\tWebSearch\x12\x1a.adaptive.WebSearchRequest\x1a\x1b.adaptive.WebSearchResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
 
 var (
 	file_adaptive_proto_rawDescOnce sync.Once
@@ -577,7 +744,7 @@ func file_adaptive_proto_rawDescGZIP() []byte {
 	return file_adaptive_proto_rawDescData
 }
 
-var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_adaptive_proto_goTypes = []any{
 	(*GenerateRequest)(nil),       // 0: adaptive.GenerateRequest
 	(*GenerateResponse)(nil),      // 1: adaptive.GenerateResponse
@@ -588,22 +755,28 @@ var file_adaptive_proto_goTypes = []any{
 	(*SearchResponse)(nil),        // 6: adaptive.SearchResponse
 	(*StoreEvidenceRequest)(nil),  // 7: adaptive.StoreEvidenceRequest
 	(*StoreEvidenceResponse)(nil), // 8: adaptive.StoreEvidenceResponse
+	(*WebSearchRequest)(nil),      // 9: adaptive.WebSearchRequest
+	(*WebSearchResult)(nil),       // 10: adaptive.WebSearchResult
+	(*WebSearchResponse)(nil),     // 11: adaptive.WebSearchResponse
 }
 var file_adaptive_proto_depIdxs = []int32{
-	5, // 0: adaptive.SearchResponse.results:type_name -> adaptive.SearchResult
-	0, // 1: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
-	2, // 2: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
-	4, // 3: adaptive.CodecService.Search:input_type -> adaptive.SearchRequest
-	7, // 4: adaptive.CodecService.StoreEvidence:input_type -> adaptive.StoreEvidenceRequest
-	1, // 5: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
-	3, // 6: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
-	6, // 7: adaptive.CodecService.Search:output_type -> adaptive.SearchResponse
-	8, // 8: adaptive.CodecService.StoreEvidence:output_type -> adaptive.StoreEvidenceResponse
-	5, // [5:9] is the sub-list for method output_type
-	1, // [1:5] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5,  // 0: adaptive.SearchResponse.results:type_name -> adaptive.SearchResult
+	10, // 1: adaptive.WebSearchResponse.results:type_name -> adaptive.WebSearchResult
+	0,  // 2: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
+	2,  // 3: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
+	4,  // 4: adaptive.CodecService.Search:input_type -> adaptive.SearchRequest
+	7,  // 5: adaptive.CodecService.StoreEvidence:input_type -> adaptive.StoreEvidenceRequest
+	9,  // 6: adaptive.CodecService.WebSearch:input_type -> adaptive.WebSearchRequest
+	1,  // 7: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
+	3,  // 8: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
+	6,  // 9: adaptive.CodecService.Search:output_type -> adaptive.SearchResponse
+	8,  // 10: adaptive.CodecService.StoreEvidence:output_type -> adaptive.StoreEvidenceResponse
+	11, // 11: adaptive.CodecService.WebSearch:output_type -> adaptive.WebSearchResponse
+	7,  // [7:12] is the sub-list for method output_type
+	2,  // [2:7] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_adaptive_proto_init() }
@@ -617,7 +790,7 @@ func file_adaptive_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_adaptive_proto_rawDesc), len(file_adaptive_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

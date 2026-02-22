@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -110,6 +111,16 @@ func main() {
 			continue
 		}
 
+		// State norm warning (logging only)
+		stateNorm := float32(0)
+		for _, v := range current.StateVector {
+			stateNorm += v * v
+		}
+		stateNorm = float32(math.Sqrt(float64(stateNorm)))
+		if stateNorm > 4.0 {
+			log.Printf("[%s] WARN state_norm=%.4f > 4.0 — approaching over-bias zone", turnID, stateNorm)
+		}
+
 		// Step 2: First-pass Generate to get entropy
 		ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
 		result, err := codecClient.Generate(ctx, prompt, current.StateVector, nil, ollamaCtx)
@@ -148,17 +159,29 @@ func main() {
 			log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 		}
 
-		// Web search fallback: no evidence + high entropy → search the web
-		if len(evidenceStrings) == 0 && float64(result.Entropy) > webSearchCfg.EntropyThreshold && webSearchCfg.Enabled {
+		// Web search fallback: search when no usable evidence exists
+		// - coherenceFiltered: gate2 found candidates but gate3 rejected all → search regardless of entropy
+		// - noUsableEvidence + highEntropy: no candidates at all and model is uncertain
+		noUsableEvidence := len(evidenceStrings) == 0
+		coherenceFiltered := gateResult.Gate2Count > 0 && gateResult.Gate3Count == 0
+		highEntropy := float64(result.Entropy) > webSearchCfg.EntropyThreshold
+		if (coherenceFiltered || (noUsableEvidence && highEntropy)) && webSearchCfg.Enabled {
+			log.Printf("[%s] web search triggered: noEvidence=%v coherenceFiltered=%v entropy=%.4f",
+				turnID, noUsableEvidence, coherenceFiltered, result.Entropy)
 			webCtx, webCancel := context.WithTimeout(context.Background(), webSearchCfg.Timeout)
-			webResults, webErr := websearch.Search(webCtx, prompt, webSearchCfg)
+			grpcResults, webErr := codecClient.WebSearch(webCtx, prompt, webSearchCfg.MaxResults)
 			webCancel()
 			if webErr != nil {
 				log.Printf("[%s] web search error (non-fatal): %v", turnID, webErr)
-			} else if len(webResults) > 0 {
+			} else if len(grpcResults) > 0 {
+				// Convert codec.WebSearchResult → websearch.Result for formatting
+				webResults := make([]websearch.Result, len(grpcResults))
+				for i, r := range grpcResults {
+					webResults[i] = websearch.Result{Title: r.Title, Snippet: r.Snippet, URL: r.URL}
+				}
 				webEvidence := websearch.FormatAsEvidence(webResults)
 				evidenceStrings = append(evidenceStrings, webEvidence)
-				log.Printf("[%s] web search: injected %d results", turnID, len(webResults))
+				log.Printf("[%s] web search: injected %d results", turnID, len(grpcResults))
 
 				// Re-generate with web search evidence
 				webGenCtx, webGenCancel := context.WithTimeout(context.Background(), timeoutGenerate)
@@ -175,7 +198,7 @@ func main() {
 		fmt.Printf("\n%s\n\n", result.Text)
 
 		// Step 4: Store this interaction as evidence for future retrieval
-		storeText := prompt
+		storeText := prompt + "\n" + result.Text
 		metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f}`, turnID, result.Entropy)
 		ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
 		_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)

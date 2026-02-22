@@ -24,6 +24,9 @@ type mockCodecService struct {
 
 	storeResp *pb.StoreEvidenceResponse
 	storeErr  error
+
+	webSearchResp *pb.WebSearchResponse
+	webSearchErr  error
 }
 
 func (m *mockCodecService) Generate(_ context.Context, _ *pb.GenerateRequest, _ ...grpc.CallOption) (*pb.GenerateResponse, error) {
@@ -40,6 +43,10 @@ func (m *mockCodecService) Search(_ context.Context, _ *pb.SearchRequest, _ ...g
 
 func (m *mockCodecService) StoreEvidence(_ context.Context, _ *pb.StoreEvidenceRequest, _ ...grpc.CallOption) (*pb.StoreEvidenceResponse, error) {
 	return m.storeResp, m.storeErr
+}
+
+func (m *mockCodecService) WebSearch(_ context.Context, _ *pb.WebSearchRequest, _ ...grpc.CallOption) (*pb.WebSearchResponse, error) {
+	return m.webSearchResp, m.webSearchErr
 }
 
 // #endregion mock
@@ -230,3 +237,50 @@ func TestStoreEvidence_Error(t *testing.T) {
 }
 
 // #endregion store-evidence-tests
+
+// #region web-search-tests
+func TestWebSearch_Success(t *testing.T) {
+	mock := &mockCodecService{
+		webSearchResp: &pb.WebSearchResponse{
+			Results: []*pb.WebSearchResult{
+				{Title: "Result 1", Snippet: "Snippet 1", Url: "https://example.com/1"},
+				{Title: "Result 2", Snippet: "Snippet 2", Url: "https://example.com/2"},
+			},
+		},
+	}
+	c := &CodecClient{client: mock}
+
+	results, err := c.WebSearch(context.Background(), "test query", 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if results[0].Title != "Result 1" {
+		t.Errorf("expected title 'Result 1', got %q", results[0].Title)
+	}
+	if results[0].Snippet != "Snippet 1" {
+		t.Errorf("expected snippet 'Snippet 1', got %q", results[0].Snippet)
+	}
+	if results[0].URL != "https://example.com/1" {
+		t.Errorf("expected URL 'https://example.com/1', got %q", results[0].URL)
+	}
+}
+
+func TestWebSearch_Error(t *testing.T) {
+	mock := &mockCodecService{
+		webSearchErr: errors.New("web search failed"),
+	}
+	c := &CodecClient{client: mock}
+
+	_, err := c.WebSearch(context.Background(), "test", 3)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, mock.webSearchErr) {
+		t.Errorf("expected wrapped web search error, got: %v", err)
+	}
+}
+
+// #endregion web-search-tests

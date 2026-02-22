@@ -25,6 +25,13 @@ type SearchResult struct {
 	Score        float32
 	MetadataJSON string
 }
+
+// WebSearchResult holds a single web search result from a WebSearch RPC call.
+type WebSearchResult struct {
+	Title   string
+	Snippet string
+	URL     string
+}
 // #endregion types
 
 // #region client-struct
@@ -138,3 +145,26 @@ func (c *CodecClient) StoreEvidence(ctx context.Context, text string, metadataJS
 	return resp.Id, nil
 }
 // #endregion store-evidence
+
+// #region web-search
+// WebSearch queries the web via the Python DDGS service.
+func (c *CodecClient) WebSearch(ctx context.Context, query string, maxResults int) ([]WebSearchResult, error) {
+	resp, err := c.client.WebSearch(ctx, &pb.WebSearchRequest{
+		Query:      query,
+		MaxResults: int32(maxResults),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("web search rpc: %w", err)
+	}
+
+	results := make([]WebSearchResult, len(resp.Results))
+	for i, r := range resp.Results {
+		results[i] = WebSearchResult{
+			Title:   r.Title,
+			Snippet: r.Snippet,
+			URL:     r.Url,
+		}
+	}
+	return results, nil
+}
+// #endregion web-search

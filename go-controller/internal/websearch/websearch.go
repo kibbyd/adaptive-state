@@ -1,11 +1,7 @@
 package websearch
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -27,7 +23,6 @@ type Config struct {
 	Timeout          time.Duration
 	Enabled          bool
 	EntropyThreshold float64
-	BaseURL          string // override for testing
 }
 
 // #endregion types
@@ -43,7 +38,6 @@ func DefaultConfig() Config {
 		Timeout:          10 * time.Second,
 		Enabled:          true,
 		EntropyThreshold: 0.3,
-		BaseURL:          "https://api.duckduckgo.com/",
 	}
 	if v := os.Getenv("WEB_SEARCH_ENABLED"); v != "" {
 		cfg.Enabled = v == "true" || v == "1"
@@ -67,106 +61,6 @@ func DefaultConfig() Config {
 }
 
 // #endregion config
-
-// #region search
-
-// duckDuckGoResponse represents the DuckDuckGo instant answer API JSON response.
-type duckDuckGoResponse struct {
-	Abstract       string              `json:"Abstract"`
-	AbstractText   string              `json:"AbstractText"`
-	AbstractSource string              `json:"AbstractSource"`
-	AbstractURL    string              `json:"AbstractURL"`
-	Heading        string              `json:"Heading"`
-	RelatedTopics  []relatedTopic      `json:"RelatedTopics"`
-}
-
-type relatedTopic struct {
-	Text     string `json:"Text"`
-	FirstURL string `json:"FirstURL"`
-	Result   string `json:"Result"`
-}
-
-// Search queries DuckDuckGo instant answer API and returns up to cfg.MaxResults results.
-func Search(ctx context.Context, query string, cfg Config) ([]Result, error) {
-	if !cfg.Enabled {
-		return nil, nil
-	}
-
-	baseURL := cfg.BaseURL
-	if baseURL == "" {
-		baseURL = "https://api.duckduckgo.com/"
-	}
-
-	params := url.Values{}
-	params.Set("q", query)
-	params.Set("format", "json")
-	params.Set("no_html", "1")
-	params.Set("skip_disambig", "1")
-	reqURL := baseURL + "?" + params.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("websearch: build request: %w", err)
-	}
-	req.Header.Set("User-Agent", "AdaptiveStateController/1.0")
-
-	client := &http.Client{Timeout: cfg.Timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("websearch: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("websearch: status %d", resp.StatusCode)
-	}
-
-	var ddg duckDuckGoResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ddg); err != nil {
-		return nil, fmt.Errorf("websearch: decode response: %w", err)
-	}
-
-	var results []Result
-
-	// Use abstract if available
-	if ddg.AbstractText != "" {
-		results = append(results, Result{
-			Title:   ddg.Heading,
-			Snippet: ddg.AbstractText,
-			URL:     ddg.AbstractURL,
-		})
-	}
-
-	// Collect related topics
-	for _, topic := range ddg.RelatedTopics {
-		if len(results) >= cfg.MaxResults {
-			break
-		}
-		if topic.Text == "" {
-			continue
-		}
-		results = append(results, Result{
-			Title:   extractTitle(topic.Text),
-			Snippet: topic.Text,
-			URL:     topic.FirstURL,
-		})
-	}
-
-	return results, nil
-}
-
-// extractTitle takes the first sentence or up to 80 chars as a title.
-func extractTitle(text string) string {
-	if idx := strings.Index(text, " - "); idx > 0 && idx < 80 {
-		return text[:idx]
-	}
-	if len(text) > 80 {
-		return text[:80] + "..."
-	}
-	return text
-}
-
-// #endregion search
 
 // #region format
 
