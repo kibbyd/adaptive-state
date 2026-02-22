@@ -280,6 +280,38 @@ func main() {
 				log.Printf("[%s] retrieval: %s (adjusted_threshold=%.4f, goals_norm=%.4f)",
 					turnID, gateResult.Reason, retCfg.SimilarityThreshold, goalsNorm)
 
+				// Filter out evidence containing rule response patterns
+				// Matches both exact responses ("Daniel who?") and continuations ("Daniel who built...")
+				allRules, _ := ruleStore.List()
+				if len(allRules) > 0 {
+					var rulePatterns []string
+					for _, r := range allRules {
+						// Strip trailing punctuation to get the stem ("Daniel who?" → "daniel who")
+						stem := strings.ToLower(strings.TrimRight(r.Response, "?.!"))
+						if stem != "" {
+							rulePatterns = append(rulePatterns, stem)
+						}
+					}
+					var filtered []string
+					for _, ev := range evidenceStrings {
+						evLower := strings.ToLower(ev)
+						contaminated := false
+						for _, pat := range rulePatterns {
+							if strings.Contains(evLower, pat) {
+								contaminated = true
+								break
+							}
+						}
+						if !contaminated {
+							filtered = append(filtered, ev)
+						}
+					}
+					if removed := len(evidenceStrings) - len(filtered); removed > 0 {
+						log.Printf("[%s] evidence filter: removed %d rule-contaminated items", turnID, removed)
+					}
+					evidenceStrings = filtered
+				}
+
 				// Re-generate with evidence injected (rules prepended)
 				allEvidence := append(ruleEvidence, evidenceStrings...)
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
