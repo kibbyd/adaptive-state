@@ -175,12 +175,13 @@ func main() {
 		}
 		goalsNorm = float32(math.Sqrt(float64(goalsNorm)))
 
-		// Load behavioral rules for system prompt injection (bypasses retrieval)
-		allRules, _ := ruleStore.List()
+		// Load behavioral rules matching current input (contextual injection, bypasses retrieval)
+		matchedRules, _ := ruleStore.Match(prompt)
 		var ruleEvidence []string
-		if len(allRules) > 0 {
-			rulesBlock := projection.FormatRulesBlock(allRules)
+		if len(matchedRules) > 0 {
+			rulesBlock := projection.FormatRulesBlock(matchedRules)
 			ruleEvidence = append(ruleEvidence, rulesBlock)
+			log.Printf("[%s] rules matched: %d for input %q", turnID, len(matchedRules), prompt)
 		}
 
 		// Variables that may be populated by generation or skipped for instruction-only prompts
