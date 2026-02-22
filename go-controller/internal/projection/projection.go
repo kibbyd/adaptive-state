@@ -111,6 +111,11 @@ func (s *PreferenceStore) List() ([]Preference, error) {
 	return prefs, nil
 }
 
+// DeleteByPrefix removes all preferences whose text starts with the given prefix (case-insensitive).
+func (s *PreferenceStore) DeleteByPrefix(prefix string) {
+	_, _ = s.db.Exec("DELETE FROM preferences WHERE LOWER(text) LIKE LOWER(?) || '%'", prefix)
+}
+
 // #endregion store
 
 // #region rule-types
@@ -316,6 +321,36 @@ func DetectCorrection(prompt string) bool {
 		}
 	}
 	return false
+}
+
+// DetectIdentity checks if a prompt contains an identity statement like
+// "my name is Daniel", "I'm Daniel", "call me Daniel".
+// Returns the extracted name and true if detected.
+func DetectIdentity(prompt string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+
+	identityPatterns := []struct {
+		prefix string
+		strip  bool // true = prefix is followed by the name
+	}{
+		{"my name is ", true},
+		{"i'm ", true},
+		{"i am ", true},
+		{"call me ", true},
+		{"you can call me ", true},
+		{"people call me ", true},
+	}
+
+	for _, pat := range identityPatterns {
+		if strings.HasPrefix(lower, pat.prefix) {
+			name := strings.TrimSpace(prompt[len(pat.prefix):])
+			name = strings.TrimRight(name, ".!?,;")
+			if name != "" {
+				return name, true
+			}
+		}
+	}
+	return "", false
 }
 
 // #endregion detect
@@ -556,9 +591,17 @@ func ProjectToPrompt(preferences []Preference, prefsNorm float32) string {
 		return ""
 	}
 
-	// Confidence from prefs segment norm: 0 → no injection, >0.1 → inject
+	// Confidence from prefs segment norm: 0 → no injection, >0.05 → inject
+	// Exception: identity preferences always project regardless of norm
 	confidence := float64(prefsNorm)
-	if confidence < 0.05 {
+	hasIdentity := false
+	for _, p := range preferences {
+		if strings.HasPrefix(p.Text, "The user's name is") {
+			hasIdentity = true
+			break
+		}
+	}
+	if confidence < 0.05 && !hasIdentity {
 		return ""
 	}
 	// Cap confidence display at 1.0

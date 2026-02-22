@@ -145,6 +145,16 @@ func main() {
 			}
 			isPreferenceOnly = true
 		}
+		// Detect and store identity statements as preferences (replaces previous identity)
+		if name, detected := projection.DetectIdentity(prompt); detected {
+			identityPref := fmt.Sprintf("The user's name is %s", name)
+			prefStore.DeleteByPrefix("The user's name is")
+			if err := prefStore.Add(identityPref, "general"); err != nil {
+				log.Printf("identity store error: %v", err)
+			} else {
+				log.Printf("identity stored: %q (replaced previous)", name)
+			}
+		}
 		// Detect and extract behavioral rules
 		if projection.DetectRule(prompt) {
 			if trigger, response, ok := projection.ExtractRule(prompt); ok {
