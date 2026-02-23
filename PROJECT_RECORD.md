@@ -8,11 +8,16 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
 
 - **Working**: Full adaptive state pipeline — 5 build phases, multi-turn dialogue, native tool calling with web search, deterministic replay
 - **Working**: Semantic learning operational (`semantic-learning-v1` tag) — compliance scoring, embedding-based direction vectors, instruction-only prompt handling, goals-adjusted retrieval
-- **Working**: Native tool calling — Python service uses `/api/chat` with tools, model calls `web_search` natively, forced fallback for factual questions, Qwen3 think-only handling
+- **Working**: Native tool calling — Python service uses `/api/chat` with tools, model calls `web_search` natively, forced fallback for factual questions + URLs, Qwen3 think-only handling
+- **Working**: Behavioral rules layer — "when I say X, you say Y" auto-extraction, match-based injection, rules-only system prompt, rule context lock
+- **Working**: Identity system — user name + AI designation detection, stored as preferences, always-projected, hardened against false positives (stopword filter, punctuation guard, word count cap)
+- **Working**: Memory isolation — Ollama context threading removed, evidence retrieval is sole conversational memory, eliminates context bleed
+- **Working**: Evidence saturation controls — recency weighting, diversity dedup, FIFO eviction, rule-turn storage skip
 - **Working**: Cross-session persistence verified — preference set in session 1 shapes output in session 2 without restating
 - **Working**: Compositional adaptation verified — "bullet points" + "concise" preferences compose correctly
 - **Working**: 95–100% test coverage on all core Go packages (11 packages)
 - **Working**: Replay system validated — production GateRecord fixtures replay 100% deterministically
+- **Milestone**: 21-turn live conversation on qwen3-4b — coherent personality, self-naming ("Orac"), philosophical depth. Three memory classes fully separated: preferences, evidence, rules.
 - **Not attempted**: Production deployment, REST API layer, long-running drift observation
 
 ## Hardware / Software
@@ -78,10 +83,11 @@ Build a learning system on top of a frozen LLM without touching base weights. Th
          (web search via ddgs Python library)
 ```
 
-**Three memory layers:**
-- **Short-term**: Ollama's `context` token array — native dialogue continuity per session
-- **Long-term**: ChromaDB evidence — gated retrieval across sessions
-- **Persistent preferences**: SQLite `preferences` table — style-tagged, contradiction-handled, projected into every prompt
+**Four memory classes:**
+- **Evidence** (context): ChromaDB vector store — gated retrieval across sessions, recency-weighted, diversity-deduped, FIFO-evicted
+- **Preferences** (identity + style): SQLite `preferences` table — style-tagged, contradiction-handled, projected into every prompt. Includes user identity and AI designation.
+- **Rules** (behavior): SQLite `rules` table — "when I say X, respond Y" patterns, match-based injection, rules-only system prompt path
+- **State vector**: 128-dim float32 in SQLite `state_versions` — tracks adaptation magnitude across preferences/goals/heuristics/risk segments
 
 **Design rationale**: Go owns all adaptive state logic (gate, update, decay, eval, rollback). Python is the generation brain — it manages chat, tool calling, and web search via Ollama `/api/chat`. Go delegates generation entirely but controls what state context is injected. The model sees stored preferences via `[ADAPTIVE STATE]` prompt block, but never sees raw state vector norms.
 
@@ -250,6 +256,58 @@ Previously used Ollama's `context` token array via `/api/generate`. Now uses `/a
 - `memory.py` — ChromaDB wrapper (store, search, delete)
 - `ollama_client.py` — Ollama HTTP API client (generate, embed, chat)
 
+### 15. Behavioral Rules Layer
+
+**Package**: `internal/projection/` (RuleStore), `cmd/controller/main.go` (match + injection)
+
+Teaches the system "when I say X, respond Y" patterns that fire immediately without generation.
+
+| Component | Detail |
+|-----------|--------|
+| Storage | SQLite `rules` table (trigger, response, priority, confidence, created_at). Case-insensitive exact match. |
+| Auto-extraction | `DetectRule()` + `ExtractRule()` parse "when I say X, you say Y" patterns from user input. |
+| Match-based injection | `ruleStore.Match(prompt)` — only inject rules whose trigger matches current input, not blanket. |
+| Rules-only system prompt | When rules fire, system prompt contains ONLY the rules block + "Output ONLY the required response." No tool instructions, no evidence. Maximum compliance. |
+| Rule turn isolation | On rule turns, use bare prompt (no `[ADAPTIVE STATE]` block) to prevent identity/preference bleed. |
+| Rule context lock | `SessionState.RuleActive` flag suppresses evidence storage during active rule sequences (e.g., knock-knock jokes). Releases when input fails continuation heuristic. |
+| Evidence filter | Post-retrieval, strip evidence containing rule response stems. Prevents joke-pattern echoing on unrelated queries. |
+
+### 16. Identity System
+
+**Package**: `internal/projection/` (DetectIdentity, DetectAIDesignation)
+
+Detects and stores both user identity ("my name is X") and AI designation ("your name is X") as preferences.
+
+| Component | Detail |
+|-----------|--------|
+| User identity | `DetectIdentity()`: matches "my name is X", "I'm X", "call me X". Stored as preference: "The user's name is X" (style: general). |
+| AI designation | `DetectAIDesignation()`: matches "your name is X", "I'll call you X". Stored as preference: "The AI's name is X" (style: general). |
+| Replace semantics | `DeleteByPrefix("The user's name is")` / `DeleteByPrefix("The AI's name is")` before insert — always replaces previous identity. |
+| Always-project | Identity preferences bypass the `prefs_norm < 0.05` threshold — projected into every prompt regardless of state vector magnitude. |
+| `isValidName()` guard | Rejects false positives: word count cap (1–4 words), stopword filter on first word ("glad", "sorry", "not", "going", "really", etc.), punctuation guard (rejects `.`, `?`, `!` in candidate). |
+
+### 17. Memory Isolation
+
+**File**: `cmd/controller/main.go` (commit `fb28ecc`)
+
+Ollama's `context` token array (used by `/api/generate` for multi-turn continuity) was removed entirely. Each turn starts fresh. Conversational memory comes exclusively from the evidence retrieval layer (ChromaDB).
+
+**Why**: Chat context caused bleed where joke/rule patterns from earlier turns contaminated unrelated queries. The `context` array is opaque (raw token IDs) and cannot be selectively pruned. Evidence retrieval provides the same cross-turn continuity but is fully auditable and filterable.
+
+### 18. Evidence Saturation Controls
+
+**Packages**: `py-inference/adaptive_inference/memory.py`, `cmd/controller/main.go`
+
+Prevents evidence accumulation from degrading retrieval quality over time.
+
+| Control | Detail |
+|---------|--------|
+| Recency weighting | `score = similarity * (0.5 + 0.5 * exp(-age / half_life))`. Half-life 6h. No timestamp → 0.75 neutral. |
+| Diversity dedup | Jaccard similarity filter (threshold 0.9) prevents near-duplicate results. |
+| FIFO eviction | MAX_EVIDENCE=500, oldest-first deletion by `stored_at` timestamp. |
+| Storage skip | Rule-triggered, preference-only, and rule-context turns don't store evidence. |
+| Timestamps | All new evidence includes RFC3339 `stored_at` timestamp in metadata. |
+
 ## Protocol Definition
 
 ```protobuf
@@ -330,7 +388,7 @@ Sentiment was inverted (nonsense scored 0.998), direction was sign-based positiv
 | `internal/update` | 100.0% | +4 direction vector tests |
 | `internal/state` | 95.0% | Unreachable: json.Marshal on map, sql.Open lazy connect, tx.Commit mid-transaction |
 | `internal/codec` | 96.3% | +2 WebSearch tests. Unreachable: grpc.NewClient error path |
-| `internal/projection` | — | 15+ tests. Store CRUD, detect, compliance, style, contradiction, project, wrap |
+| `internal/projection` | — | 30+ tests. Store CRUD, detect, compliance, style, contradiction, project, wrap, identity, AI designation, rules CRUD, rules match, isValidName |
 | `internal/websearch` | — | 4 tests (format + config only, HTTP search removed) |
 | `cmd/controller` | 0.0% | REPL main loop — tested via live integration |
 | `cmd/replay` | 0.0% | CLI main — tested via fixture integration |
@@ -531,6 +589,22 @@ go run ./cmd/replay/ --db adaptive_state.db
 ## Commit History
 
 ```
+145545e Reject identity candidates with sentence-internal punctuation
+d0d2201 Fix identity false positives and add URL search fallback
+6589a9c AI designation: detect, store, replace, and always-project
+70f380a Filter preference false positives from desire-to-action phrases
+026b893 Filter rule-contaminated evidence from retrieval results
+f3f9d07 Isolate rule turns from state projection
+c718026 Identity as preference: detect, store, replace, and always-project
+7c635ff Rules-only system prompt: strip competing instructions on rule turns
+fb28ecc Remove Ollama context threading — evidence retrieval is sole memory
+ec92c85 Fix continuation heuristic: word count + question-word exclusion
+1a25a36 Tighten rule context continuation heuristic
+d982fd9 Rule context lock + evidence saturation controls
+0d057b8 Contextual rule injection: match-based instead of blanket
+4f8e8b1 Add behavioral rules layer: bridge between memory and action
+c5d0c30 Add TODO checklist for ship, test, and future work
+26defc7 Document agent personality training and add training dataset
 81dc435 Native tool calling: Python service becomes generation brain with DDGS web search
 8d078ca Fix detection heuristics and add web search empty-results logging
 a4786f0 Update PROJECT_RECORD.md with semantic learning milestone, test results, and observe-phase guidance
@@ -635,11 +709,15 @@ Training was performed via Google Colab: `https://colab.research.google.com/driv
 
 ### What's solid
 
-The core pipeline is complete and verified with semantic learning operational. State versioning, gated retrieval, signal-driven learning with embedding-based direction, preference compliance scoring, state→prompt projection, decay, hierarchical gate, post-commit eval, rollback, provenance logging, deterministic replay, and web search fallback all work end-to-end. Cross-session persistence and compositional adaptation are verified. Test coverage is 95–100% on every core package.
+The core pipeline is complete and verified with semantic learning operational. State versioning, gated retrieval, signal-driven learning with embedding-based direction, preference compliance scoring, state→prompt projection, decay, hierarchical gate, post-commit eval, rollback, provenance logging, deterministic replay, web search fallback, behavioral rules, identity detection, memory isolation, and evidence saturation controls all work end-to-end. Cross-session persistence, compositional adaptation, and multi-class memory separation are verified. Test coverage is 95–100% on every core package. A 21-turn live conversation demonstrated coherent personality and self-naming on qwen3-4b.
 
-### Current phase: Observe
+### Current phase: Milestone — First Coherent Self-Learning Conversation
 
-The system has crossed from mechanical state accumulation to meaningful semantic adaptation. The priority now is **stability observation**, not feature addition. The main risks are:
+**21-turn live conversation on qwen3-4b** (2026-02-22): The system held a coherent, personality-rich dialogue including self-naming ("Orac", from Blake's 7), philosophical exploration, humor (knock-knock jokes via rules layer), and identity persistence — all on a 4-billion parameter model with no fine-tuning of base weights.
+
+Three memory classes (preferences, evidence, rules) operated in concert: rules fired immediately for taught patterns, identity persisted across turns via preferences, and evidence retrieval provided conversational continuity without context threading. The user was addressed as "Commander" throughout.
+
+The system has crossed from mechanical state accumulation to meaningful semantic adaptation. Remaining risks:
 
 1. **Preference accumulation conflicts** — what happens with many contradicting preferences over time?
 2. **State overspecialization** — does the vector drift toward a narrow point that resists new preferences?
