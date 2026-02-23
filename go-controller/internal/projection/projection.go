@@ -266,6 +266,64 @@ var startPatterns = []string{
 	"do not be",
 }
 
+// desireVerbs are broad patterns that often appear in non-preference requests.
+var desireVerbs = map[string]bool{
+	"i prefer":     true,
+	"i like":       true,
+	"i want":       true,
+	"i need":       true,
+	"i'd like":     true,
+	"i would like": true,
+}
+
+// behaviorVerbs are verbs that indicate AI behavior preferences when following "to".
+// "I'd like to respond concisely" = preference. "I'd like to give you a name" = request.
+var behaviorVerbs = map[string]bool{
+	"respond":      true,
+	"answer":       true,
+	"be":           true,
+	"use":          true,
+	"keep":         true,
+	"include":      true,
+	"explain":      true,
+	"provide":      true,
+	"write":        true,
+	"format":       true,
+	"speak":        true,
+	"communicate":  true,
+}
+
+// isDesireToAction returns true if a desire-verb pattern ("i'd like", "i want", etc.)
+// is followed by "to [action verb]", indicating a request rather than a preference.
+// Returns false (not filtered) for "you to [verb]" (directing AI behavior)
+// and for "to [behavior verb]" (still a preference).
+func isDesireToAction(lower, matchedPattern string) bool {
+	if !desireVerbs[matchedPattern] {
+		return false
+	}
+	idx := strings.Index(lower, matchedPattern)
+	if idx < 0 {
+		return false
+	}
+	after := strings.TrimSpace(lower[idx+len(matchedPattern):])
+
+	// "you to [verb]" — directing AI behavior, still a preference
+	if strings.HasPrefix(after, "you to ") {
+		return false
+	}
+
+	// "to [verb]" — check if verb is behavior-related
+	if strings.HasPrefix(after, "to ") {
+		parts := strings.Fields(after[3:])
+		if len(parts) > 0 && behaviorVerbs[parts[0]] {
+			return false // behavior verb → still a preference
+		}
+		return true // action verb → filter out as request
+	}
+
+	return false
+}
+
 // DetectPreference checks if a prompt contains an explicit preference statement.
 // Returns the normalized preference text and true if detected, empty and false otherwise.
 func DetectPreference(prompt string) (string, bool) {
@@ -274,8 +332,16 @@ func DetectPreference(prompt string) (string, bool) {
 		return "", false
 	}
 
+	// Question filter: prompts ending with ? are questions, not preferences
+	if strings.HasSuffix(lower, "?") {
+		return "", false
+	}
+
 	for _, pat := range containsPatterns {
 		if strings.Contains(lower, pat) {
+			if isDesireToAction(lower, pat) {
+				continue
+			}
 			cleaned := strings.TrimSpace(prompt)
 			cleaned = strings.TrimRight(cleaned, ".!?")
 			return cleaned, true
