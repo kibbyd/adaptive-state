@@ -389,6 +389,27 @@ func DetectCorrection(prompt string) bool {
 	return false
 }
 
+// nameStopwords are common first words that indicate a sentence, not a name.
+var nameStopwords = map[string]bool{
+	"glad": true, "sorry": true, "not": true, "sure": true, "just": true,
+	"going": true, "trying": true, "really": true, "here": true, "ok": true,
+	"okay": true, "fine": true, "good": true, "happy": true, "tired": true,
+	"done": true, "back": true, "still": true, "currently": true, "also": true,
+	"looking": true, "wondering": true, "thinking": true, "afraid": true,
+}
+
+// isValidName checks that a candidate name is 1–4 words and doesn't start with a stopword.
+func isValidName(candidate string) bool {
+	words := strings.Fields(candidate)
+	if len(words) == 0 || len(words) > 4 {
+		return false
+	}
+	if nameStopwords[strings.ToLower(words[0])] {
+		return false
+	}
+	return true
+}
+
 // DetectIdentity checks if a prompt contains an identity statement like
 // "my name is Daniel", "I'm Daniel", "call me Daniel".
 // Returns the extracted name and true if detected.
@@ -411,7 +432,7 @@ func DetectIdentity(prompt string) (string, bool) {
 		if strings.HasPrefix(lower, pat.prefix) {
 			name := strings.TrimSpace(prompt[len(pat.prefix):])
 			name = strings.TrimRight(name, ".!?,;")
-			if name != "" {
+			if name != "" && isValidName(name) {
 				return name, true
 			}
 		}
@@ -438,7 +459,7 @@ func DetectAIDesignation(prompt string) (string, bool) {
 		if strings.HasPrefix(lower, pat) {
 			designation := strings.TrimSpace(prompt[len(pat):])
 			designation = strings.TrimRight(designation, ".!?,;")
-			if designation != "" {
+			if designation != "" && isValidName(designation) {
 				return designation, true
 			}
 		}

@@ -64,6 +64,16 @@ def _is_factual_question(text: str) -> bool:
     return (has_question_mark or has_question_word) and has_factual_keyword
 
 
+_URL_PATTERN = re.compile(
+    r"https?://\S+|www\.\S+|\b\w+\.(com|net|org|io|dev|ai)\b", re.IGNORECASE
+)
+
+
+def _contains_url(text: str) -> bool:
+    """Heuristic: does the prompt contain a URL or domain name?"""
+    return _URL_PATTERN.search(text) is not None
+
+
 def _execute_tool(name: str, args: dict) -> str:
     """Execute a tool call and return the result string."""
     if name == "web_search":
@@ -187,7 +197,7 @@ class InferenceService:
             # Extract raw user text from wrapped prompt (after [USER PROMPT] marker)
             if "[USER PROMPT]" in raw_prompt:
                 raw_prompt = raw_prompt.split("[USER PROMPT]")[-1].strip()
-        if depth == 0 and not has_evidence and _is_factual_question(raw_prompt):
+        if depth == 0 and not has_evidence and (_is_factual_question(raw_prompt) or _contains_url(raw_prompt)):
             logger.info("forced search fallback for factual question")
             search_result = _execute_tool("web_search", {"query": raw_prompt})
             messages.append(message)

@@ -174,6 +174,54 @@ func TestDetectCorrection(t *testing.T) {
 	}
 }
 
+func TestDetectIdentity(t *testing.T) {
+	cases := []struct {
+		input    string
+		wantName string
+		wantOK   bool
+	}{
+		{"my name is Daniel", "Daniel", true},
+		{"I'm Daniel", "Daniel", true},
+		{"call me Dan", "Dan", true},
+		{"I'm glad you think so", "", false},
+		{"I'm not sure about that", "", false},
+		{"I'm going to the store", "", false},
+		{"I'm really excited about this project we're working on together", "", false},
+	}
+	for _, tc := range cases {
+		name, ok := DetectIdentity(tc.input)
+		if ok != tc.wantOK {
+			t.Errorf("DetectIdentity(%q) ok=%v, want %v", tc.input, ok, tc.wantOK)
+			continue
+		}
+		if ok && name != tc.wantName {
+			t.Errorf("DetectIdentity(%q) name=%q, want %q", tc.input, name, tc.wantName)
+		}
+	}
+}
+
+func TestDetectAIDesignation(t *testing.T) {
+	cases := []struct {
+		input           string
+		wantDesignation string
+		wantOK          bool
+	}{
+		{"your name is Architect", "Architect", true},
+		{"I'll call you Sage", "Sage", true},
+		{"your name is something I haven't decided on yet", "", false},
+	}
+	for _, tc := range cases {
+		designation, ok := DetectAIDesignation(tc.input)
+		if ok != tc.wantOK {
+			t.Errorf("DetectAIDesignation(%q) ok=%v, want %v", tc.input, ok, tc.wantOK)
+			continue
+		}
+		if ok && designation != tc.wantDesignation {
+			t.Errorf("DetectAIDesignation(%q) designation=%q, want %q", tc.input, designation, tc.wantDesignation)
+		}
+	}
+}
+
 // #endregion detect-tests
 
 // #region style-tests
