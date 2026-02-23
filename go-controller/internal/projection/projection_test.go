@@ -187,6 +187,7 @@ func TestDetectIdentity(t *testing.T) {
 		{"I'm not sure about that", "", false},
 		{"I'm going to the store", "", false},
 		{"I'm really excited about this project we're working on together", "", false},
+		{"I am commander. You are ?", "", false},
 	}
 	for _, tc := range cases {
 		name, ok := DetectIdentity(tc.input)

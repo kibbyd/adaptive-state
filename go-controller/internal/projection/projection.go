@@ -398,8 +398,12 @@ var nameStopwords = map[string]bool{
 	"looking": true, "wondering": true, "thinking": true, "afraid": true,
 }
 
-// isValidName checks that a candidate name is 1–4 words and doesn't start with a stopword.
+// isValidName checks that a candidate name is 1–4 words, doesn't start with a stopword,
+// and doesn't contain sentence-internal punctuation.
 func isValidName(candidate string) bool {
+	if strings.ContainsAny(candidate, ".?!") {
+		return false
+	}
 	words := strings.Fields(candidate)
 	if len(words) == 0 || len(words) > 4 {
 		return false
