@@ -155,6 +155,16 @@ func main() {
 				log.Printf("identity stored: %q (replaced previous)", name)
 			}
 		}
+		// Detect and store AI designation (e.g. "your name is Architect")
+		if designation, detected := projection.DetectAIDesignation(prompt); detected {
+			designPref := fmt.Sprintf("The AI's designation is %s", designation)
+			prefStore.DeleteByPrefix("The AI's designation is")
+			if err := prefStore.Add(designPref, "explicit"); err != nil {
+				log.Printf("AI designation store error: %v", err)
+			} else {
+				log.Printf("AI designation stored: %q", designation)
+			}
+		}
 		// Detect and extract behavioral rules
 		if projection.DetectRule(prompt) {
 			if trigger, response, ok := projection.ExtractRule(prompt); ok {

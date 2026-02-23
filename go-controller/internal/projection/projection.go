@@ -419,6 +419,33 @@ func DetectIdentity(prompt string) (string, bool) {
 	return "", false
 }
 
+// DetectAIDesignation checks if a prompt is naming/designating the AI,
+// e.g. "your name is Architect", "I'll call you Sage".
+// Returns the extracted designation and true if detected.
+func DetectAIDesignation(prompt string) (string, bool) {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+
+	patterns := []string{
+		"your name is ",
+		"your designation is ",
+		"i'll call you ",
+		"i will call you ",
+		"you are called ",
+		"you go by ",
+	}
+
+	for _, pat := range patterns {
+		if strings.HasPrefix(lower, pat) {
+			designation := strings.TrimSpace(prompt[len(pat):])
+			designation = strings.TrimRight(designation, ".!?,;")
+			if designation != "" {
+				return designation, true
+			}
+		}
+	}
+	return "", false
+}
+
 // #endregion detect
 
 // #region style
@@ -662,7 +689,7 @@ func ProjectToPrompt(preferences []Preference, prefsNorm float32) string {
 	confidence := float64(prefsNorm)
 	hasIdentity := false
 	for _, p := range preferences {
-		if strings.HasPrefix(p.Text, "The user's name is") {
+		if strings.HasPrefix(p.Text, "The user's name is") || strings.HasPrefix(p.Text, "The AI's designation is") {
 			hasIdentity = true
 			break
 		}
