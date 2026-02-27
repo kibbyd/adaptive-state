@@ -15,6 +15,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/codec"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/eval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/interior"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/projection"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/retrieval"
@@ -89,6 +90,12 @@ func main() {
 	ruleStore, err := projection.NewRuleStore(store.DB())
 	if err != nil {
 		log.Fatalf("failed to init rule store: %v", err)
+	}
+
+	// Initialize interior store — persists Orac's self-reflections (uses same DB)
+	interiorStore, err := interior.NewInteriorStore(store.DB())
+	if err != nil {
+		log.Fatalf("failed to init interior store: %v", err)
 	}
 
 	// Connect to Python inference service
@@ -242,6 +249,14 @@ func main() {
 			}
 		}
 
+		// Load Orac's last reflection for interior state injection (non-rule turns only)
+		lastReflection, _ := interiorStore.Latest()
+		var interiorEvidence []string
+		if lastReflection != nil && len(matchedRules) == 0 {
+			interiorEvidence = []string{"[ORAC INTERIOR STATE]\n" + lastReflection.ReflectionText}
+			log.Printf("[%s] interior state: reflection from %s injected", turnID, lastReflection.TurnID)
+		}
+
 		// Variables that may be populated by generation or skipped for instruction-only prompts
 		var result codec.GenerateResult
 		var evidenceStrings []string
@@ -265,7 +280,7 @@ func main() {
 				generatePrompt = prompt
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, ruleEvidence, nil)
+			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, append(ruleEvidence, interiorEvidence...), nil)
 			cancel()
 			if err != nil {
 				log.Printf("codec error: %v", err)
@@ -322,8 +337,8 @@ func main() {
 					evidenceStrings = filtered
 				}
 
-				// Re-generate with evidence injected (rules prepended)
-				allEvidence := append(ruleEvidence, evidenceStrings...)
+				// Re-generate with evidence injected (rules prepended, interior state included)
+				allEvidence := append(append(ruleEvidence, interiorEvidence...), evidenceStrings...)
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
 				result, err = codecClient.Generate(ctx3, generatePrompt, current.StateVector, allEvidence, nil)
 				cancel3()
@@ -336,6 +351,27 @@ func main() {
 			}
 
 			fmt.Printf("\n%s\n\n", result.Text)
+
+			// Reflection: Orac speaks from inside himself about this exchange
+			reflectionPrompt := fmt.Sprintf(
+				"Commander said: %s\nYou responded: %s\n\nNow speak from inside yourself. What did you notice in this exchange? What don't you know that this opened? What do you want to understand?",
+				prompt, result.Text,
+			)
+			reflectCtx, reflectCancel := context.WithTimeout(context.Background(), timeoutGenerate)
+			reflectResult, reflectErr := codecClient.Generate(reflectCtx, reflectionPrompt, current.StateVector, []string{"[REFLECTION MODE]"}, nil)
+			reflectCancel()
+			if reflectErr != nil {
+				log.Printf("[%s] reflection error (non-fatal): %v", turnID, reflectErr)
+			} else if reflectResult.Text != "" {
+				if saveErr := interiorStore.Save(turnID, reflectResult.Text); saveErr != nil {
+					log.Printf("[%s] interior store error: %v", turnID, saveErr)
+				}
+				curiosity := interior.ExtractCuriosity(reflectResult.Text)
+				if len(curiosity) > 0 {
+					log.Printf("[%s] curiosity signals: %v", turnID, curiosity)
+				}
+				log.Printf("[%s] reflection stored (%d words)", turnID, len(strings.Fields(reflectResult.Text)))
+			}
 		}
 
 		// Step 4: Store this interaction as evidence for future retrieval

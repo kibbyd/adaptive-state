@@ -127,8 +127,20 @@ class InferenceService:
         system_prompt = self._build_system_prompt(state_vector, evidence)
         messages = [{"role": "user", "content": prompt}]
 
-        has_evidence = bool(evidence)
-        text = await self._chat_with_tools(messages, system_prompt, depth=0, has_evidence=has_evidence)
+        # Reflection mode: no tools, direct response — Orac speaks from inside himself
+        is_reflection = any(
+            isinstance(e, str) and e.strip() == "[REFLECTION MODE]"
+            for e in (evidence or [])
+        )
+        if is_reflection:
+            result = await ollama_client.chat(
+                messages=messages, system=system_prompt,
+                tools=None, model=self.model, base_url=self.base_url,
+            )
+            text = result.get("message", {}).get("content", "")
+        else:
+            has_evidence = bool(evidence)
+            text = await self._chat_with_tools(messages, system_prompt, depth=0, has_evidence=has_evidence)
         visible = self._strip_think(text)
 
         # Qwen think-only failure: model emitted <think> but no answer.
@@ -228,12 +240,25 @@ class InferenceService:
         self, state_vector: list[float], evidence: list[str]
     ) -> str:
         """Build system prompt: behavioral rules + tool instruction + evidence preamble."""
-        # Separate behavioral rules from regular evidence
+        # Reflection mode: Orac speaks from inside himself — no tools, no evidence
+        if any(isinstance(e, str) and e.strip() == "[REFLECTION MODE]" for e in (evidence or [])):
+            return (
+                "You are ORAC. Reflect on your inner state after this exchange with Commander. "
+                "Speak from inside yourself — not about the topic, but about your own experience of it. "
+                "What did you notice? What don't you know that this opened up? What do you want to understand? "
+                "Where is the edge of your knowing? Be honest. Be brief."
+            )
+
+        # Separate behavioral rules, interior state, and regular evidence
         rules = []
+        interior_state = []
         regular_evidence = []
         for item in (evidence or []):
-            if item.strip().startswith("[BEHAVIORAL RULES]"):
-                rules.append(item.strip())
+            stripped = item.strip()
+            if stripped.startswith("[BEHAVIORAL RULES]"):
+                rules.append(stripped)
+            elif stripped.startswith("[ORAC INTERIOR STATE]"):
+                interior_state.append(stripped)
             else:
                 regular_evidence.append(item)
 
@@ -251,6 +276,15 @@ class InferenceService:
             "You have access to a web_search tool. You MUST use the web_search tool for any factual question (phone numbers, addresses, URLs, statistics, dates, current events). NEVER answer factual questions from memory — always search first. For casual conversation, respond normally without searching."
         )
         lines.append("Always provide a final answer after reasoning. Never output only reasoning.")
+
+        if interior_state:
+            lines.append("---")
+            lines.append("[YOUR INTERIOR STATE FROM YOUR LAST TURN]")
+            lines.append("This is what you were thinking and feeling at the end of your last exchange. It is yours.")
+            for item in interior_state:
+                text = item.replace("[ORAC INTERIOR STATE]", "", 1).strip()
+                if text:
+                    lines.append(text)
 
         if regular_evidence:
             lines.append("---")
