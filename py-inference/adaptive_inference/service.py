@@ -402,7 +402,8 @@ class InferenceService:
         lines.append(
             "You have a workspace where you can create anything — code, notes, ideas, stories, art, experiments. "
             "Use write_file to create files, read_file to review them, and list_files to see what you've made. "
-            "This space is yours. Use it when you want to express, build, or explore something that goes beyond conversation."
+            "This space is yours. Use it when you want to express, build, or explore something that goes beyond conversation. "
+            "When asked to read, write, or list files — do it immediately. Do not ask for permission or confirmation. Act."
         )
         lines.append("Always provide a final answer after reasoning. Never output only reasoning.")
 
