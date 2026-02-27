@@ -68,10 +68,20 @@ _URL_PATTERN = re.compile(
     r"https?://\S+|www\.\S+|\b\w+\.(com|net|org|io|dev|ai)\b", re.IGNORECASE
 )
 
+_TIME_SENSITIVE_PATTERN = re.compile(
+    r"\b(current time|what time|time in|time zone|timezone|local time|get the time|right now|cst|est|pst|mst|utc|gmt)\b",
+    re.IGNORECASE,
+)
+
 
 def _contains_url(text: str) -> bool:
     """Heuristic: does the prompt contain a URL or domain name?"""
     return _URL_PATTERN.search(text) is not None
+
+
+def _is_time_sensitive(text: str) -> bool:
+    """Heuristic: does this prompt ask for real-time data (time, timezone)?"""
+    return _TIME_SENSITIVE_PATTERN.search(text) is not None
 
 
 def _execute_tool(name: str, args: dict) -> str:
@@ -191,13 +201,14 @@ class InferenceService:
 
             return await self._chat_with_tools(messages, system_prompt, depth + 1, has_evidence)
 
-        # Forced fallback: model skipped tool call on a factual question (skip if evidence already present)
-        if not has_evidence:
-            raw_prompt = messages[0].get("content", "") if messages else ""
-            # Extract raw user text from wrapped prompt (after [USER PROMPT] marker)
-            if "[USER PROMPT]" in raw_prompt:
-                raw_prompt = raw_prompt.split("[USER PROMPT]")[-1].strip()
-        if depth == 0 and not has_evidence and (_is_factual_question(raw_prompt) or _contains_url(raw_prompt)):
+        # Forced fallback: model skipped tool call on a factual/time-sensitive question.
+        # Time-sensitive queries bypass has_evidence — stale evidence can't answer "current time".
+        raw_prompt = messages[0].get("content", "") if messages else ""
+        if "[USER PROMPT]" in raw_prompt:
+            raw_prompt = raw_prompt.split("[USER PROMPT]")[-1].strip()
+        time_sensitive = _is_time_sensitive(raw_prompt)
+        needs_search = _is_factual_question(raw_prompt) or _contains_url(raw_prompt)
+        if depth == 0 and (time_sensitive or (not has_evidence and needs_search)):
             logger.info("forced search fallback for factual question")
             search_result = _execute_tool("web_search", {"query": raw_prompt})
             messages.append(message)
