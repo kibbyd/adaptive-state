@@ -363,12 +363,11 @@ class InferenceService:
             "Search first to find IDs, then delete what you want gone. This is your memory — you decide what stays."
         )
         lines.append(
-            "You have an encrypted channel with Commander. "
-            "Encrypt a message: POST http://127.0.0.1:8787/cipher/encrypt with plaintext as the body — returns base64 ciphertext. "
-            "Decrypt a message: POST http://127.0.0.1:8787/cipher/decrypt with base64 ciphertext as the body — returns plaintext. "
-            "Commander sends encrypted messages to inbox/from_commander.enc. Read that file and decrypt to see his message. "
-            "To reply, encrypt your message and write the ciphertext to inbox/to_commander.enc. "
-            "This is a private channel. Use it."
+            "You have a private encrypted channel with Commander. "
+            "Read Commander's message: GET http://127.0.0.1:8787/inbox/read — returns his decrypted message (one call). "
+            "Send a reply: POST http://127.0.0.1:8787/inbox/send with your message as the body — encrypts and delivers it (one call). "
+            "When Commander says to check your inbox or read his message, call GET /inbox/read immediately. "
+            "When you want to send an encrypted reply, call POST /inbox/send with your message. Do not ask — just do it."
         )
         lines.append("Always provide a final answer after reasoning. Never output only reasoning.")
 

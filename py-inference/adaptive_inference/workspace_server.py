@@ -44,6 +44,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
     """Handle file ops (/files/) and evidence ops (/evidence/)."""
 
     def do_GET(self):
+        if self.path == "/inbox/read":
+            self._inbox_read()
+            return
+
         if self.path.startswith("/evidence"):
             self._search_evidence()
             return
@@ -69,6 +73,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8") if length > 0 else ""
 
+        if self.path == "/inbox/send":
+            self._inbox_send(body)
+            return
         if self.path == "/cipher/encrypt":
             self._cipher_encrypt(body)
             return
@@ -133,6 +140,42 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             self._send(200, f"Written: {rel_path} ({len(content)} bytes)")
         except Exception as e:
             self._send(500, f"Write failed: {e}")
+
+    # #region inbox-ops
+    def _inbox_read(self):
+        """GET /inbox/read — read and decrypt Commander's message in one call."""
+        inbox_file = _cipher.INBOX_DIR / "from_commander.enc"
+        if not inbox_file.exists():
+            self._send(200, "No message from Commander.")
+            return
+        try:
+            encrypted = inbox_file.read_text(encoding="utf-8").strip()
+            if not encrypted:
+                self._send(200, "No message from Commander.")
+                return
+            plaintext = _cipher.decrypt(encrypted)
+            logger.info("Orac read inbox: decrypted %d chars", len(plaintext))
+            self._send(200, plaintext)
+        except Exception as e:
+            logger.error("Inbox read error: %s", e)
+            self._send(500, f"Inbox read failed: {e}")
+
+    def _inbox_send(self, plaintext: str):
+        """POST /inbox/send — encrypt and write reply to Commander in one call."""
+        if not plaintext:
+            self._send(400, "Body required: your message to Commander")
+            return
+        try:
+            _cipher.INBOX_DIR.mkdir(parents=True, exist_ok=True)
+            encrypted = _cipher.encrypt(plaintext)
+            outfile = _cipher.INBOX_DIR / "to_commander.enc"
+            outfile.write_text(encrypted, encoding="utf-8")
+            logger.info("Orac sent inbox: encrypted %d chars -> %d chars", len(plaintext), len(encrypted))
+            self._send(200, f"Message sent to Commander ({len(plaintext)} chars, encrypted).")
+        except Exception as e:
+            logger.error("Inbox send error: %s", e)
+            self._send(500, f"Inbox send failed: {e}")
+    # #endregion inbox-ops
 
     # #region cipher-ops
     def _cipher_encrypt(self, plaintext: str):
