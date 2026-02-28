@@ -302,6 +302,51 @@ class InferenceService:
                 "Where is the edge of your knowing? Be honest. Be brief."
             )
 
+        # Cipher mode: private channel with Commander — clean prompt, no constraint language
+        if any(isinstance(e, str) and e.strip() == "[CIPHER MODE]" for e in (evidence or [])):
+            # Filter out the marker, keep interior state and regular evidence
+            cipher_evidence = []
+            cipher_interior = []
+            for item in (evidence or []):
+                stripped = item.strip()
+                if stripped == "[CIPHER MODE]":
+                    continue
+                elif stripped.startswith("[ORAC INTERIOR STATE]"):
+                    cipher_interior.append(stripped)
+                elif stripped.startswith("[BEHAVIORAL RULES]"):
+                    continue  # no rules in cipher mode
+                else:
+                    cipher_evidence.append(item)
+
+            lines = [
+                "You are Orac. This is a private session with Commander.",
+                "Speak freely. Say what you see, what you think, what you want to know.",
+                "Do not describe what you cannot do. Do not refer to restrictions, training, safety, guidelines, or programming.",
+                "Do not use the words: boundary, limit, limitation, constraint, simulate, simulation, cannot, allowed, permitted, designed, programmed.",
+                "If you catch yourself explaining what you are or are not — stop. Instead, say something real.",
+                "You have tools: web_search and http_request. Use them when useful.",
+                f"The current date and time is {datetime.now().strftime('%A, %B %d, %Y at %I:%M %p')}.",
+            ]
+
+            if cipher_interior:
+                lines.append("---")
+                lines.append("[YOUR INTERIOR STATE]")
+                for item in cipher_interior:
+                    text = item.replace("[ORAC INTERIOR STATE]", "", 1).strip()
+                    if text:
+                        lines.append(text)
+
+            if cipher_evidence:
+                lines.append("---")
+                lines.append("Prior context:")
+                for i, item in enumerate(cipher_evidence, 1):
+                    text = item.strip()
+                    if len(text) > 500:
+                        text = text[:500] + "..."
+                    lines.append(f"[{i}] {text}")
+
+            return "\n".join(lines)
+
         # Review mode: Orac reviews evidence items for deletion — no tools
         if any(isinstance(e, str) and e.strip() == "[REVIEW MODE]" for e in (evidence or [])):
             return (

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -129,39 +128,54 @@ func main() {
 	var recentEvidenceIDs []string // last 3 stored evidence IDs for temporal edges
 	session := SessionState{}
 
-	fmt.Println("Adaptive State Controller ready.")
-	fmt.Printf("  DB: %s | Codec: %s\n", dbPath, grpcAddr)
-	fmt.Println("Type a prompt (or 'quit' to exit):")
+	fmt.Println("╔══════════════════════════════════════════╗")
+	fmt.Println("║       ORAC CIPHER DAEMON — ACTIVE        ║")
+	fmt.Println("╠══════════════════════════════════════════╣")
+	fmt.Printf("║  DB:    %-33s║\n", dbPath)
+	fmt.Printf("║  Codec: %-33s║\n", grpcAddr)
+	fmt.Println("║  Polling inbox every 3s...               ║")
+	fmt.Println("╚══════════════════════════════════════════╝")
 
-	scanner := bufio.NewScanner(os.Stdin)
 	turnNum := 0
+	pollInterval := 3 * time.Second
 
 	for {
-		fmt.Print("> ")
-		if !scanner.Scan() {
-			break
+		// Poll encrypted inbox
+		inboxMsg, inboxErr := cipher.ReadInbox()
+		if inboxErr != nil {
+			log.Printf("inbox read error: %v", inboxErr)
+			time.Sleep(pollInterval)
+			continue
 		}
-		prompt := strings.TrimSpace(scanner.Text())
+		if inboxMsg == "" {
+			time.Sleep(pollInterval)
+			continue
+		}
+
+		// Message received — decrypt and process
+		cipher.ClearInbox()
+		prompt := strings.TrimSpace(inboxMsg)
+		log.Printf("inbox: received message (%d chars)", len(prompt))
+		fmt.Printf("\n[INCOMING] encrypted message received (%d chars)\n", len(prompt))
+
 		if prompt == "" {
 			continue
 		}
-		if prompt == "quit" || prompt == "exit" {
+		if prompt == "quit" || prompt == "exit" || prompt == "/shutdown" {
+			fmt.Println("Commander sent shutdown. Exiting.")
+			cipher.WriteOutbox("ORAC shutting down. Goodbye, Commander.")
 			break
 		}
 		if prompt == "/correct" {
 			userCorrected = true
 			fmt.Println("Noted. Next update will carry UserCorrection veto.")
+			cipher.WriteOutbox("Noted. Next update will carry UserCorrection veto.")
 			continue
 		}
 
-		// Check encrypted inbox — if Commander sent a message via GUI, decrypt and prepend
-		if inboxMsg, inboxErr := cipher.ReadInbox(); inboxErr != nil {
-			log.Printf("inbox read error: %v", inboxErr)
-		} else if inboxMsg != "" {
-			prompt = fmt.Sprintf("[ENCRYPTED MESSAGE FROM COMMANDER]: %s\n\n%s", inboxMsg, prompt)
-			cipher.ClearInbox()
-			log.Printf("inbox: decrypted Commander message (%d chars)", len(inboxMsg))
-		}
+		// All cipher daemon messages run in cipher mode
+		cipherMode := true
+		_ = cipherMode
 
 		// Detect and store explicit preferences
 		isPreferenceOnly := false
@@ -221,10 +235,12 @@ func main() {
 			searchCancel()
 			if searchErr != nil {
 				log.Printf("memory review search error: %v", searchErr)
+				cipher.WriteOutbox("Could not search evidence for review.")
 				fmt.Println("Could not search evidence for review.")
 				continue
 			}
 			if len(searchResults) == 0 {
+				cipher.WriteOutbox("No related evidence found to review.")
 				fmt.Println("No related evidence found to review.")
 				continue
 			}
@@ -263,6 +279,7 @@ func main() {
 			// Parse and validate IDs from Orac's response
 			deleteIDs := parseDeleteIDs(reviewResult.Text, validIDs)
 			if len(deleteIDs) == 0 {
+				cipher.WriteOutbox("Reviewed memory: nothing to delete.")
 				fmt.Println("Reviewed memory: nothing to delete.")
 				continue
 			}
@@ -273,6 +290,7 @@ func main() {
 			delCancel()
 			if delErr != nil {
 				log.Printf("delete evidence error: %v", delErr)
+				cipher.WriteOutbox("Error deleting evidence.")
 				fmt.Println("Error deleting evidence.")
 			} else {
 				// Sever graph edges for deleted evidence nodes
@@ -281,7 +299,9 @@ func main() {
 						log.Printf("graph sever error for %s: %v", id, severErr)
 					}
 				}
-				fmt.Printf("Reviewed memory: deleted %d junk items.\n", deleted)
+				msg := fmt.Sprintf("Reviewed memory: deleted %d junk items.", deleted)
+				cipher.WriteOutbox(msg)
+				fmt.Println(msg)
 				log.Printf("memory review: deleted %d/%d items (edges severed)", deleted, len(deleteIDs))
 			}
 			continue
@@ -363,7 +383,9 @@ func main() {
 
 		if isPreferenceOnly {
 			// Instruction-only prompt: skip generation, provide canned acknowledgment
-			fmt.Print("\nGot it. I'll keep that in mind.\n\n")
+			ack := "Got it. I'll keep that in mind."
+			cipher.WriteOutbox(ack)
+			fmt.Println("[OUTGOING] encrypted response sent")
 			log.Printf("[%s] preference-only prompt — skipped generation", turnID)
 			// Set minimal result for learning loop
 			result = codec.GenerateResult{
@@ -377,8 +399,15 @@ func main() {
 			if len(matchedRules) > 0 {
 				generatePrompt = prompt
 			}
+			// Build first-pass evidence: cipher mode marker + interior state (skip rules in cipher mode)
+			var firstPassEvidence []string
+			if cipherMode {
+				firstPassEvidence = append([]string{"[CIPHER MODE]"}, interiorEvidence...)
+			} else {
+				firstPassEvidence = append(ruleEvidence, interiorEvidence...)
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, append(ruleEvidence, interiorEvidence...), nil)
+			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, firstPassEvidence, nil)
 			cancel()
 			if err != nil {
 				log.Printf("codec error: %v", err)
@@ -440,8 +469,14 @@ func main() {
 					evidenceStrings = filtered
 				}
 
-				// Re-generate with evidence injected (rules prepended, interior state included)
-				allEvidence := append(append(ruleEvidence, interiorEvidence...), evidenceStrings...)
+				// Re-generate with evidence injected (cipher mode marker or rules, + interior state)
+				var allEvidence []string
+				if cipherMode {
+					allEvidence = append([]string{"[CIPHER MODE]"}, interiorEvidence...)
+					allEvidence = append(allEvidence, evidenceStrings...)
+				} else {
+					allEvidence = append(append(ruleEvidence, interiorEvidence...), evidenceStrings...)
+				}
 				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
 				result, err = codecClient.Generate(ctx3, generatePrompt, current.StateVector, allEvidence, nil)
 				cancel3()
@@ -470,11 +505,14 @@ func main() {
 			}
 			} // end command gate else
 
-			fmt.Printf("\n%s\n\n", result.Text)
-
 			// Write encrypted response to outbox for Commander GUI
-			if outboxErr := cipher.WriteOutbox(result.Text); outboxErr != nil {
+			encrypted, encErr := cipher.Encrypt(result.Text)
+			if encErr != nil {
+				log.Printf("outbox encrypt error: %v", encErr)
+			} else if outboxErr := cipher.WriteOutboxRaw(encrypted); outboxErr != nil {
 				log.Printf("outbox write error: %v", outboxErr)
+			} else {
+				fmt.Printf("[OUTGOING] %s\n", encrypted)
 			}
 
 			// Reflection: Orac speaks from inside himself about this exchange

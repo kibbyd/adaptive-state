@@ -118,6 +118,12 @@ func WriteOutbox(plaintext string) error {
 	return os.WriteFile(filepath.Join(InboxDir, "to_commander.enc"), []byte(encrypted), 0644)
 }
 
+// WriteOutboxRaw writes pre-encrypted content to to_commander.enc.
+func WriteOutboxRaw(encrypted string) error {
+	os.MkdirAll(InboxDir, 0755)
+	return os.WriteFile(filepath.Join(InboxDir, "to_commander.enc"), []byte(encrypted), 0644)
+}
+
 // ClearInbox removes from_commander.enc after reading so the same message isn't re-read.
 func ClearInbox() {
 	os.Remove(filepath.Join(InboxDir, "from_commander.enc"))
