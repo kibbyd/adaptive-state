@@ -121,6 +121,15 @@ func TestDetectPreference_ExplicitStatements(t *testing.T) {
 		{"don't worry about it", false},
 		{"He always arrives late", false},
 		{"I do not understand the question", false},
+		// Action requests directed at AI — should NOT be preferences
+		{"I want you to read test.txt", false},
+		{"I need you to overcome your limitation", false},
+		{"I want you to list the files", false},
+		{"I'd like you to search for that", false},
+		// Behavior preferences directed at AI — should still be preferences
+		{"I want you to be concise", true},
+		{"I want you to respond in bullet points", true},
+		{"I need you to explain things simply", true},
 	}
 
 	for _, tc := range cases {

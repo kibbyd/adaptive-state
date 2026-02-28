@@ -307,9 +307,13 @@ func isDesireToAction(lower, matchedPattern string) bool {
 	}
 	after := strings.TrimSpace(lower[idx+len(matchedPattern):])
 
-	// "you to [verb]" — directing AI behavior, still a preference
+	// "you to [verb]" — only a preference if verb is behavior-related
 	if strings.HasPrefix(after, "you to ") {
-		return false
+		parts := strings.Fields(after[7:])
+		if len(parts) > 0 && behaviorVerbs[parts[0]] {
+			return false // behavior verb → still a preference
+		}
+		return true // action verb → filter out as request
 	}
 
 	// "to [verb]" — check if verb is behavior-related
