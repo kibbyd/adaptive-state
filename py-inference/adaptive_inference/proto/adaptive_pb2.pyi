@@ -85,3 +85,39 @@ class StoreEvidenceResponse(_message.Message):
     ID_FIELD_NUMBER: _ClassVar[int]
     id: str
     def __init__(self, id: _Optional[str] = ...) -> None: ...
+
+class WebSearchRequest(_message.Message):
+    __slots__ = ("query", "max_results")
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    MAX_RESULTS_FIELD_NUMBER: _ClassVar[int]
+    query: str
+    max_results: int
+    def __init__(self, query: _Optional[str] = ..., max_results: _Optional[int] = ...) -> None: ...
+
+class WebSearchResult(_message.Message):
+    __slots__ = ("title", "snippet", "url")
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    SNIPPET_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    title: str
+    snippet: str
+    url: str
+    def __init__(self, title: _Optional[str] = ..., snippet: _Optional[str] = ..., url: _Optional[str] = ...) -> None: ...
+
+class WebSearchResponse(_message.Message):
+    __slots__ = ("results",)
+    RESULTS_FIELD_NUMBER: _ClassVar[int]
+    results: _containers.RepeatedCompositeFieldContainer[WebSearchResult]
+    def __init__(self, results: _Optional[_Iterable[_Union[WebSearchResult, _Mapping]]] = ...) -> None: ...
+
+class DeleteEvidenceRequest(_message.Message):
+    __slots__ = ("ids",)
+    IDS_FIELD_NUMBER: _ClassVar[int]
+    ids: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, ids: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class DeleteEvidenceResponse(_message.Message):
+    __slots__ = ("deleted_count",)
+    DELETED_COUNT_FIELD_NUMBER: _ClassVar[int]
+    deleted_count: int
+    def __init__(self, deleted_count: _Optional[int] = ...) -> None: ...

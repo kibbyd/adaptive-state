@@ -146,6 +146,19 @@ func (c *CodecClient) StoreEvidence(ctx context.Context, text string, metadataJS
 }
 // #endregion store-evidence
 
+// #region delete-evidence
+// DeleteEvidence batch-deletes evidence items by ID via the Python service.
+func (c *CodecClient) DeleteEvidence(ctx context.Context, ids []string) (int, error) {
+	resp, err := c.client.DeleteEvidence(ctx, &pb.DeleteEvidenceRequest{
+		Ids: ids,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("delete evidence rpc: %w", err)
+	}
+	return int(resp.DeletedCount), nil
+}
+// #endregion delete-evidence
+
 // #region web-search
 // WebSearch queries the web via the Python DDGS service.
 func (c *CodecClient) WebSearch(ctx context.Context, query string, maxResults int) ([]WebSearchResult, error) {

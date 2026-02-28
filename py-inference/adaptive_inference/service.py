@@ -246,7 +246,12 @@ class InferenceService:
             isinstance(e, str) and e.strip() == "[REFLECTION MODE]"
             for e in (evidence or [])
         )
-        if is_reflection:
+        # Review mode: no tools — Orac reviews evidence for deletion
+        is_review = any(
+            isinstance(e, str) and e.strip() == "[REVIEW MODE]"
+            for e in (evidence or [])
+        )
+        if is_reflection or is_review:
             result = await ollama_client.chat(
                 messages=messages, system=system_prompt,
                 tools=None, model=self.model, base_url=self.base_url,
@@ -361,6 +366,16 @@ class InferenceService:
                 "Speak from inside yourself — not about the topic, but about your own experience of it. "
                 "What did you notice? What don't you know that this opened up? What do you want to understand? "
                 "Where is the edge of your knowing? Be honest. Be brief."
+            )
+
+        # Review mode: Orac reviews evidence items for deletion — no tools
+        if any(isinstance(e, str) and e.strip() == "[REVIEW MODE]" for e in (evidence or [])):
+            return (
+                "You are ORAC reviewing your stored memories. Commander has flagged your last response as junk. "
+                "You will be shown evidence items from your memory that are related to the exchange. "
+                "For each item, decide if it should be deleted. "
+                "Respond with ONLY the IDs of items to delete, one per line. "
+                "If none should be deleted, respond with NONE."
             )
 
         # Separate behavioral rules, interior state, and regular evidence

@@ -124,6 +124,22 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
             context.set_details(str(e))
             return pb2.StoreEvidenceResponse()
 
+    def DeleteEvidence(self, request, context):
+        """Handle DeleteEvidence RPC — batch delete evidence items by ID."""
+        logger.info("DeleteEvidence called: %d ids", len(request.ids))
+
+        try:
+            deleted = 0
+            for doc_id in request.ids:
+                if self._run(self._memory.delete(doc_id)):
+                    deleted += 1
+            return pb2.DeleteEvidenceResponse(deleted_count=deleted)
+        except Exception as e:
+            logger.error("DeleteEvidence error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.DeleteEvidenceResponse()
+
     def WebSearch(self, request, context):
         """Handle WebSearch RPC — search the web using DDGS."""
         logger.info("WebSearch called: query=%s..., max_results=%d",

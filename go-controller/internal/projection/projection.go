@@ -475,6 +475,33 @@ func DetectAIDesignation(prompt string) (string, bool) {
 	return "", false
 }
 
+// DetectMemoryCorrection checks if a prompt is requesting evidence deletion/review.
+// Distinct from DetectCorrection (which handles general corrections for gate veto).
+func DetectMemoryCorrection(prompt string) bool {
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+	memoryPatterns := []string{
+		"that's junk",
+		"that is junk",
+		"forget that",
+		"delete that",
+		"bad memory",
+		"wrong memory",
+		"junk memory",
+		"clear that",
+		"remove that memory",
+		"that's garbage",
+		"that is garbage",
+		"bad evidence",
+		"wrong evidence",
+	}
+	for _, pat := range memoryPatterns {
+		if strings.Contains(lower, pat) {
+			return true
+		}
+	}
+	return false
+}
+
 // #endregion detect
 
 // #region style

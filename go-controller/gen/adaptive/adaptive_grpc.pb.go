@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CodecService_Generate_FullMethodName      = "/adaptive.CodecService/Generate"
-	CodecService_Embed_FullMethodName         = "/adaptive.CodecService/Embed"
-	CodecService_Search_FullMethodName        = "/adaptive.CodecService/Search"
-	CodecService_StoreEvidence_FullMethodName = "/adaptive.CodecService/StoreEvidence"
-	CodecService_WebSearch_FullMethodName     = "/adaptive.CodecService/WebSearch"
+	CodecService_Generate_FullMethodName       = "/adaptive.CodecService/Generate"
+	CodecService_Embed_FullMethodName          = "/adaptive.CodecService/Embed"
+	CodecService_Search_FullMethodName         = "/adaptive.CodecService/Search"
+	CodecService_StoreEvidence_FullMethodName  = "/adaptive.CodecService/StoreEvidence"
+	CodecService_WebSearch_FullMethodName      = "/adaptive.CodecService/WebSearch"
+	CodecService_DeleteEvidence_FullMethodName = "/adaptive.CodecService/DeleteEvidence"
 )
 
 // CodecServiceClient is the client API for CodecService service.
@@ -37,6 +38,7 @@ type CodecServiceClient interface {
 	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResponse, error)
 	StoreEvidence(ctx context.Context, in *StoreEvidenceRequest, opts ...grpc.CallOption) (*StoreEvidenceResponse, error)
 	WebSearch(ctx context.Context, in *WebSearchRequest, opts ...grpc.CallOption) (*WebSearchResponse, error)
+	DeleteEvidence(ctx context.Context, in *DeleteEvidenceRequest, opts ...grpc.CallOption) (*DeleteEvidenceResponse, error)
 }
 
 type codecServiceClient struct {
@@ -97,6 +99,16 @@ func (c *codecServiceClient) WebSearch(ctx context.Context, in *WebSearchRequest
 	return out, nil
 }
 
+func (c *codecServiceClient) DeleteEvidence(ctx context.Context, in *DeleteEvidenceRequest, opts ...grpc.CallOption) (*DeleteEvidenceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEvidenceResponse)
+	err := c.cc.Invoke(ctx, CodecService_DeleteEvidence_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CodecServiceServer is the server API for CodecService service.
 // All implementations must embed UnimplementedCodecServiceServer
 // for forward compatibility.
@@ -108,6 +120,7 @@ type CodecServiceServer interface {
 	Search(context.Context, *SearchRequest) (*SearchResponse, error)
 	StoreEvidence(context.Context, *StoreEvidenceRequest) (*StoreEvidenceResponse, error)
 	WebSearch(context.Context, *WebSearchRequest) (*WebSearchResponse, error)
+	DeleteEvidence(context.Context, *DeleteEvidenceRequest) (*DeleteEvidenceResponse, error)
 	mustEmbedUnimplementedCodecServiceServer()
 }
 
@@ -132,6 +145,9 @@ func (UnimplementedCodecServiceServer) StoreEvidence(context.Context, *StoreEvid
 }
 func (UnimplementedCodecServiceServer) WebSearch(context.Context, *WebSearchRequest) (*WebSearchResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method WebSearch not implemented")
+}
+func (UnimplementedCodecServiceServer) DeleteEvidence(context.Context, *DeleteEvidenceRequest) (*DeleteEvidenceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEvidence not implemented")
 }
 func (UnimplementedCodecServiceServer) mustEmbedUnimplementedCodecServiceServer() {}
 func (UnimplementedCodecServiceServer) testEmbeddedByValue()                      {}
@@ -244,6 +260,24 @@ func _CodecService_WebSearch_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CodecService_DeleteEvidence_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEvidenceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodecServiceServer).DeleteEvidence(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodecService_DeleteEvidence_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodecServiceServer).DeleteEvidence(ctx, req.(*DeleteEvidenceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CodecService_ServiceDesc is the grpc.ServiceDesc for CodecService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -270,6 +304,10 @@ var CodecService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "WebSearch",
 			Handler:    _CodecService_WebSearch_Handler,
+		},
+		{
+			MethodName: "DeleteEvidence",
+			Handler:    _CodecService_DeleteEvidence_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

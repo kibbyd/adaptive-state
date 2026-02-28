@@ -115,6 +115,9 @@ func main() {
 	// Phase 5: Heuristic signal producer
 	signalProducer := signals.NewProducer(codecClient, signals.DefaultProducerConfig())
 	var userCorrected bool
+	var lastGateSummary string
+	var lastPrompt string
+	var lastResponse string
 	session := SessionState{}
 
 	fmt.Println("Adaptive State Controller ready.")
@@ -190,6 +193,76 @@ func main() {
 			isPreferenceOnly = false // corrections need generation
 		}
 
+		// Memory correction: Commander wants to review and delete bad evidence
+		if projection.DetectMemoryCorrection(prompt) && lastPrompt != "" {
+			log.Printf("memory correction triggered — reviewing evidence")
+			// Search for evidence similar to the previous exchange
+			searchQuery := lastPrompt + "\n" + lastResponse
+			searchCtx, searchCancel := context.WithTimeout(context.Background(), timeoutSearch)
+			searchResults, searchErr := codecClient.Search(searchCtx, searchQuery, 10, 0.1)
+			searchCancel()
+			if searchErr != nil {
+				log.Printf("memory review search error: %v", searchErr)
+				fmt.Println("Could not search evidence for review.")
+				continue
+			}
+			if len(searchResults) == 0 {
+				fmt.Println("No related evidence found to review.")
+				continue
+			}
+
+			// Build review prompt showing evidence items + gate feedback
+			var reviewLines []string
+			reviewLines = append(reviewLines, "Commander flagged your last response as junk.")
+			if lastGateSummary != "" {
+				reviewLines = append(reviewLines, fmt.Sprintf("Gate feedback from that turn: %s", lastGateSummary))
+			}
+			reviewLines = append(reviewLines, fmt.Sprintf("Your last exchange was:\n  Commander: %s\n  You: %s", lastPrompt, lastResponse))
+			reviewLines = append(reviewLines, "\nRelated evidence items in your memory:")
+			var validIDs []string
+			for _, sr := range searchResults {
+				text := sr.Text
+				if len(text) > 200 {
+					text = text[:200] + "..."
+				}
+				reviewLines = append(reviewLines, fmt.Sprintf("  ID: %s\n  Text: %s\n  Score: %.4f\n", sr.ID, text, sr.Score))
+				validIDs = append(validIDs, sr.ID)
+			}
+			reviewLines = append(reviewLines, "Which IDs should be deleted? List one per line, or NONE.")
+			reviewPrompt := strings.Join(reviewLines, "\n")
+
+			// Send to Orac in review mode (no tools, no state wrapping)
+			reviewState, _ := store.GetCurrent()
+			reviewCtx, reviewCancel := context.WithTimeout(context.Background(), timeoutGenerate)
+			reviewResult, reviewErr := codecClient.Generate(reviewCtx, reviewPrompt, reviewState.StateVector, []string{"[REVIEW MODE]"}, nil)
+			reviewCancel()
+			if reviewErr != nil {
+				log.Printf("memory review generate error: %v", reviewErr)
+				fmt.Println("Could not complete evidence review.")
+				continue
+			}
+
+			// Parse and validate IDs from Orac's response
+			deleteIDs := parseDeleteIDs(reviewResult.Text, validIDs)
+			if len(deleteIDs) == 0 {
+				fmt.Println("Reviewed memory: nothing to delete.")
+				continue
+			}
+
+			// Execute deletions
+			delCtx, delCancel := context.WithTimeout(context.Background(), timeoutStore)
+			deleted, delErr := codecClient.DeleteEvidence(delCtx, deleteIDs)
+			delCancel()
+			if delErr != nil {
+				log.Printf("delete evidence error: %v", delErr)
+				fmt.Println("Error deleting evidence.")
+			} else {
+				fmt.Printf("Reviewed memory: deleted %d junk items.\n", deleted)
+				log.Printf("memory review: deleted %d/%d items", deleted, len(deleteIDs))
+			}
+			continue
+		}
+
 		turnNum++
 		turnID := fmt.Sprintf("turn-%d", turnNum)
 
@@ -262,6 +335,7 @@ func main() {
 		var evidenceStrings []string
 		var evidenceRefs []string
 		var gateResult retrieval.GateResult
+		var curiosity []string
 
 		if isPreferenceOnly {
 			// Instruction-only prompt: skip generation, provide canned acknowledgment
@@ -353,9 +427,13 @@ func main() {
 			fmt.Printf("\n%s\n\n", result.Text)
 
 			// Reflection: Orac speaks from inside himself about this exchange
+			gateFeedback := ""
+			if lastGateSummary != "" {
+				gateFeedback = fmt.Sprintf("\n[GATE FEEDBACK from your previous turn: %s]", lastGateSummary)
+			}
 			reflectionPrompt := fmt.Sprintf(
-				"Commander said: %s\nYou responded: %s\n\nNow speak from inside yourself. What did you notice in this exchange? What don't you know that this opened? What do you want to understand?",
-				prompt, result.Text,
+				"Commander said: %s\nYou responded: %s%s\n\nNow speak from inside yourself. What did you notice in this exchange? What don't you know that this opened? What do you want to understand?",
+				prompt, result.Text, gateFeedback,
 			)
 			reflectCtx, reflectCancel := context.WithTimeout(context.Background(), timeoutGenerate)
 			reflectResult, reflectErr := codecClient.Generate(reflectCtx, reflectionPrompt, current.StateVector, []string{"[REFLECTION MODE]"}, nil)
@@ -366,7 +444,7 @@ func main() {
 				if saveErr := interiorStore.Save(turnID, reflectResult.Text); saveErr != nil {
 					log.Printf("[%s] interior store error: %v", turnID, saveErr)
 				}
-				curiosity := interior.ExtractCuriosity(reflectResult.Text)
+				curiosity = interior.ExtractCuriosity(reflectResult.Text)
 				if len(curiosity) > 0 {
 					log.Printf("[%s] curiosity signals: %v", turnID, curiosity)
 				}
@@ -374,20 +452,7 @@ func main() {
 			}
 		}
 
-		// Step 4: Store this interaction as evidence for future retrieval
-		// Skip storage for rule-triggered, preference-only, and rule-context turns
-		if !isPreferenceOnly && len(matchedRules) == 0 && !session.RuleActive {
-			storeText := prompt + "\n" + result.Text
-			now := time.Now().UTC()
-			metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f,"stored_at":"%s"}`,
-				turnID, result.Entropy, now.Format(time.RFC3339))
-			ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
-			_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
-			cancel4()
-			if storeErr != nil {
-				log.Printf("store evidence error (non-fatal): %v", storeErr)
-			}
-		}
+		// Step 4: Evidence storage — deferred until after gate decision (see Step 6b)
 
 		// Step 5: Run update function (produces proposed state + metrics)
 		updateCtx := update.UpdateContext{
@@ -483,9 +548,15 @@ func main() {
 		}
 		signalsJSON, _ := json.Marshal(gateRecord)
 
+		// Store gate summary for next turn's reflection + memory review
+		lastGateSummary = fmt.Sprintf("soft_score=%.4f entropy=%.4f delta_norm=%.4f segments=%v vetoed=%v",
+			gateDecision.SoftScore, result.Entropy, updateResult.Metrics.DeltaNorm,
+			updateResult.Metrics.SegmentsHit, gateDecision.Vetoed)
+
 		if gateDecision.Action == "reject" {
-			// Gate rejected: log rejection, keep old state, continue
+			// Gate rejected: log rejection, keep old state, skip evidence storage, continue
 			log.Printf("[%s] gate rejected: %s", turnID, gateDecision.Reason)
+			log.Printf("[%s] evidence skipped: gate rejected", turnID)
 			_ = logging.LogDecision(store.DB(), logging.ProvenanceEntry{
 				VersionID:    current.VersionID,
 				TriggerType:  "user_turn",
@@ -495,9 +566,35 @@ func main() {
 				Reason:       fmt.Sprintf("gate: %s", gateDecision.Reason),
 				CreatedAt:    time.Now().UTC(),
 			})
+			// Track previous turn even on rejection
+			lastPrompt = prompt
+			lastResponse = result.Text
+
 			fmt.Printf("[%s] decision=reject (gate) entropy=%.4f evidence=%d\n",
 				turnID, result.Entropy, len(evidenceStrings))
 			continue
+		}
+
+		// Step 6b: Reflection-gated evidence storage — Orac's reflection decides what's worth keeping.
+		// No curiosity signals = the exchange didn't open anything new = don't store it.
+		// Gate rejection = don't store. Low entropy = stalling pattern = don't store.
+		if !isPreferenceOnly && len(matchedRules) == 0 && !session.RuleActive {
+			if len(curiosity) == 0 {
+				log.Printf("[%s] evidence skipped: reflection found nothing worth keeping", turnID)
+			} else if result.Entropy < 0.03 {
+				log.Printf("[%s] evidence skipped: entropy %.4f (stalling pattern)", turnID, result.Entropy)
+			} else {
+				storeText := prompt + "\n" + result.Text
+				now := time.Now().UTC()
+				metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f,"stored_at":"%s"}`,
+					turnID, result.Entropy, now.Format(time.RFC3339))
+				ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
+				_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
+				cancel4()
+				if storeErr != nil {
+					log.Printf("store evidence error (non-fatal): %v", storeErr)
+				}
+			}
 		}
 
 		// Step 7: Tentative commit
@@ -524,6 +621,10 @@ func main() {
 				Reason:       fmt.Sprintf("eval rollback: %s", evalResult.Reason),
 				CreatedAt:    time.Now().UTC(),
 			})
+			// Track previous turn even on rollback
+			lastPrompt = prompt
+			lastResponse = result.Text
+
 			fmt.Printf("[%s] decision=rollback (eval) entropy=%.4f evidence=%d\n",
 				turnID, result.Entropy, len(evidenceStrings))
 			continue
@@ -544,12 +645,49 @@ func main() {
 			log.Printf("logging error: %v", err)
 		}
 
+		// Track previous turn for memory review context
+		lastPrompt = prompt
+		lastResponse = result.Text
+
 		fmt.Printf("[%s] decision=commit gate_score=%.4f entropy=%.4f evidence=%d\n",
 			turnID, gateDecision.SoftScore, result.Entropy, len(evidenceStrings))
 	}
 }
 
 // #endregion main
+
+// #region parse-delete-ids
+
+// parseDeleteIDs extracts evidence IDs from Orac's review response.
+// Only accepts IDs that exist in the validIDs whitelist (prevents hallucinated deletions).
+func parseDeleteIDs(response string, validIDs []string) []string {
+	if strings.TrimSpace(strings.ToUpper(response)) == "NONE" {
+		return nil
+	}
+
+	validSet := make(map[string]bool, len(validIDs))
+	for _, id := range validIDs {
+		validSet[id] = true
+	}
+
+	var result []string
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Strip common prefixes like "ID: " or "- "
+		line = strings.TrimPrefix(line, "ID: ")
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimSpace(line)
+		if validSet[line] {
+			result = append(result, line)
+		}
+	}
+	return result
+}
+
+// #endregion parse-delete-ids
 
 // #region helpers
 func envOr(key, fallback string) string {
