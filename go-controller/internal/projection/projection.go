@@ -325,6 +325,12 @@ func isDesireToAction(lower, matchedPattern string) bool {
 		return true // action verb → filter out as request
 	}
 
+	// No "to" or "you to" after desire verb — this is conversational, not a preference.
+	// e.g. "I want hoping you could understand" or "I want you to know something"
+	if after != "" && !strings.HasPrefix(after, "to ") && !strings.HasPrefix(after, "you to ") {
+		return true // filter out as non-preference
+	}
+
 	return false
 }
 
