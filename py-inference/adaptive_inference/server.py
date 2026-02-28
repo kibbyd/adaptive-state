@@ -235,8 +235,8 @@ def serve():
     pb2_grpc.add_CodecServiceServicer_to_server(servicer, server)
     server.add_insecure_port(f"0.0.0.0:{port}")
 
-    # Start workspace HTTP server (file ops API for Orac)
-    start_workspace_server()
+    # Start workspace HTTP server (file ops + evidence ops API for Orac)
+    start_workspace_server(memory_store=memory, async_loop=servicer._loop)
 
     logger.info("Starting gRPC server on port %s (model=%s, embed_model=%s, ollama=%s)", port, model, embed_model, ollama_url)
     server.start()

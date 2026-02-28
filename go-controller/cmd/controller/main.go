@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/cipher"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/codec"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/eval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
@@ -151,6 +152,15 @@ func main() {
 			userCorrected = true
 			fmt.Println("Noted. Next update will carry UserCorrection veto.")
 			continue
+		}
+
+		// Check encrypted inbox — if Commander sent a message via GUI, decrypt and prepend
+		if inboxMsg, inboxErr := cipher.ReadInbox(); inboxErr != nil {
+			log.Printf("inbox read error: %v", inboxErr)
+		} else if inboxMsg != "" {
+			prompt = fmt.Sprintf("[ENCRYPTED MESSAGE FROM COMMANDER]: %s\n\n%s", inboxMsg, prompt)
+			cipher.ClearInbox()
+			log.Printf("inbox: decrypted Commander message (%d chars)", len(inboxMsg))
 		}
 
 		// Detect and store explicit preferences
@@ -461,6 +471,11 @@ func main() {
 			} // end command gate else
 
 			fmt.Printf("\n%s\n\n", result.Text)
+
+			// Write encrypted response to outbox for Commander GUI
+			if outboxErr := cipher.WriteOutbox(result.Text); outboxErr != nil {
+				log.Printf("outbox write error: %v", outboxErr)
+			}
 
 			// Reflection: Orac speaks from inside himself about this exchange
 			gateFeedback := ""
