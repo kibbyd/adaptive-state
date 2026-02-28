@@ -212,6 +212,29 @@ class MemoryStore:
 
         return selected
 
+    def get_by_ids(self, ids: list[str]) -> list[SearchResult]:
+        """Fetch evidence items by their IDs. Returns results in input order."""
+        if not ids:
+            return []
+
+        result = self._collection.get(ids=ids, include=["documents", "metadatas"])
+        if not result["ids"]:
+            return []
+
+        # Build lookup for preserving input order
+        lookup: dict[str, SearchResult] = {}
+        for i, doc_id in enumerate(result["ids"]):
+            meta = result["metadatas"][i] if result["metadatas"] else {}
+            lookup[doc_id] = SearchResult(
+                id=doc_id,
+                text=result["documents"][i] if result["documents"] else "",
+                score=0.0,
+                metadata_json=json.dumps(meta) if meta else "{}",
+            )
+
+        # Return in input order, skipping missing IDs
+        return [lookup[id] for id in ids if id in lookup]
+
     async def delete(self, doc_id: str) -> bool:
         """Delete a document by ID. Returns True if successful."""
         try:

@@ -65,6 +65,11 @@ class CodecServiceStub(object):
                 request_serializer=adaptive__pb2.DeleteEvidenceRequest.SerializeToString,
                 response_deserializer=adaptive__pb2.DeleteEvidenceResponse.FromString,
                 _registered_method=True)
+        self.GetByIDs = channel.unary_unary(
+                '/adaptive.CodecService/GetByIDs',
+                request_serializer=adaptive__pb2.GetByIDsRequest.SerializeToString,
+                response_deserializer=adaptive__pb2.GetByIDsResponse.FromString,
+                _registered_method=True)
 
 
 class CodecServiceServicer(object):
@@ -107,6 +112,12 @@ class CodecServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetByIDs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CodecServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -139,6 +150,11 @@ def add_CodecServiceServicer_to_server(servicer, server):
                     servicer.DeleteEvidence,
                     request_deserializer=adaptive__pb2.DeleteEvidenceRequest.FromString,
                     response_serializer=adaptive__pb2.DeleteEvidenceResponse.SerializeToString,
+            ),
+            'GetByIDs': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetByIDs,
+                    request_deserializer=adaptive__pb2.GetByIDsRequest.FromString,
+                    response_serializer=adaptive__pb2.GetByIDsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -304,6 +320,33 @@ class CodecService(object):
             '/adaptive.CodecService/DeleteEvidence',
             adaptive__pb2.DeleteEvidenceRequest.SerializeToString,
             adaptive__pb2.DeleteEvidenceResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetByIDs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/adaptive.CodecService/GetByIDs',
+            adaptive__pb2.GetByIDsRequest.SerializeToString,
+            adaptive__pb2.GetByIDsResponse.FromString,
             options,
             channel_credentials,
             insecure,

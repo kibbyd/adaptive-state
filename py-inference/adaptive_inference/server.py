@@ -17,6 +17,7 @@ import adaptive_pb2_grpc as pb2_grpc
 
 from .memory import MemoryStore
 from .service import InferenceService
+from .workspace_server import start_workspace_server
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,29 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
             context.set_details(str(e))
             return pb2.DeleteEvidenceResponse()
 
+    def GetByIDs(self, request, context):
+        """Handle GetByIDs RPC — fetch evidence items by their IDs."""
+        logger.info("GetByIDs called: %d ids", len(request.ids))
+
+        try:
+            results = self._memory.get_by_ids(list(request.ids))
+            return pb2.GetByIDsResponse(
+                results=[
+                    pb2.SearchResult(
+                        id=r.id,
+                        text=r.text,
+                        score=r.score,
+                        metadata_json=r.metadata_json,
+                    )
+                    for r in results
+                ]
+            )
+        except Exception as e:
+            logger.error("GetByIDs error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.GetByIDsResponse()
+
     def WebSearch(self, request, context):
         """Handle WebSearch RPC — search the web using DDGS."""
         logger.info("WebSearch called: query=%s..., max_results=%d",
@@ -186,6 +210,9 @@ def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     pb2_grpc.add_CodecServiceServicer_to_server(servicer, server)
     server.add_insecure_port(f"0.0.0.0:{port}")
+
+    # Start workspace HTTP server (file ops API for Orac)
+    start_workspace_server()
 
     logger.info("Starting gRPC server on port %s (model=%s, embed_model=%s, ollama=%s)", port, model, embed_model, ollama_url)
     server.start()

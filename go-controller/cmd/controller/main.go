@@ -15,6 +15,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/codec"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/eval"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/graph"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/interior"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/projection"
@@ -98,6 +99,12 @@ func main() {
 		log.Fatalf("failed to init interior store: %v", err)
 	}
 
+	// Initialize graph store — associative evidence edges (uses same DB)
+	graphStore, err := graph.NewGraphStore(store.DB())
+	if err != nil {
+		log.Fatalf("failed to init graph store: %v", err)
+	}
+
 	// Connect to Python inference service
 	codecClient, err := codec.NewCodecClient(grpcAddr)
 	if err != nil {
@@ -118,6 +125,7 @@ func main() {
 	var lastGateSummary string
 	var lastPrompt string
 	var lastResponse string
+	var recentEvidenceIDs []string // last 3 stored evidence IDs for temporal edges
 	session := SessionState{}
 
 	fmt.Println("Adaptive State Controller ready.")
@@ -257,8 +265,14 @@ func main() {
 				log.Printf("delete evidence error: %v", delErr)
 				fmt.Println("Error deleting evidence.")
 			} else {
+				// Sever graph edges for deleted evidence nodes
+				for _, id := range deleteIDs {
+					if severErr := graphStore.SeverNode(id); severErr != nil {
+						log.Printf("graph sever error for %s: %v", id, severErr)
+					}
+				}
 				fmt.Printf("Reviewed memory: deleted %d junk items.\n", deleted)
-				log.Printf("memory review: deleted %d/%d items", deleted, len(deleteIDs))
+				log.Printf("memory review: deleted %d/%d items (edges severed)", deleted, len(deleteIDs))
 			}
 			continue
 		}
@@ -362,12 +376,17 @@ func main() {
 			}
 
 			// Step 3: Triple-gated retrieval with goals-adjusted threshold
+			// Command gate: skip retrieval for direct tool commands
+			if retrieval.IsDirectCommand(prompt) {
+				log.Printf("[%s] command gate: skipping retrieval for direct command", turnID)
+			} else {
 			retCfg := retrieval.DefaultConfig()
 			retCfg.SimilarityThreshold = retrieval.AdjustedThreshold(retCfg.SimilarityThreshold, goalsNorm)
 			adjustedRetriever := retrieval.NewRetriever(codecClient, retCfg)
+			graphRetriever := retrieval.NewGraphRetriever(adjustedRetriever, graphStore, codecClient)
 
 			ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
-			gateResult, err = adjustedRetriever.Retrieve(ctx2, prompt, result.Entropy)
+			gateResult, err = graphRetriever.Retrieve(ctx2, prompt, result.Entropy)
 			cancel2()
 			if err != nil {
 				log.Printf("retrieval error (non-fatal): %v", err)
@@ -424,6 +443,18 @@ func main() {
 				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 			}
 
+			// Co-retrieval edge formation: link evidence items retrieved together
+			if len(evidenceRefs) >= 2 {
+				for i := 0; i < len(evidenceRefs); i++ {
+					for j := i + 1; j < len(evidenceRefs); j++ {
+						graphStore.IncrementEdge(evidenceRefs[i], evidenceRefs[j], "co_retrieval", 0.1)
+						graphStore.IncrementEdge(evidenceRefs[j], evidenceRefs[i], "co_retrieval", 0.1)
+					}
+				}
+				log.Printf("[%s] graph: %d co-retrieval edges formed", turnID, len(evidenceRefs)*(len(evidenceRefs)-1))
+			}
+			} // end command gate else
+
 			fmt.Printf("\n%s\n\n", result.Text)
 
 			// Reflection: Orac speaks from inside himself about this exchange
@@ -453,6 +484,16 @@ func main() {
 		}
 
 		// Step 4: Evidence storage — deferred until after gate decision (see Step 6b)
+
+		// Periodic graph decay (every 50 turns)
+		if turnNum%50 == 0 {
+			deleted, decayErr := graphStore.DecayAll(48.0)
+			if decayErr != nil {
+				log.Printf("[%s] graph decay error: %v", turnID, decayErr)
+			} else if deleted > 0 {
+				log.Printf("[%s] graph decay: removed %d weak edges", turnID, deleted)
+			}
+		}
 
 		// Step 5: Run update function (produces proposed state + metrics)
 		updateCtx := update.UpdateContext{
@@ -589,10 +630,32 @@ func main() {
 				metadataJSON := fmt.Sprintf(`{"turn_id":"%s","entropy":%.4f,"stored_at":"%s"}`,
 					turnID, result.Entropy, now.Format(time.RFC3339))
 				ctx4, cancel4 := context.WithTimeout(context.Background(), timeoutStore)
-				_, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
+				storedID, storeErr := codecClient.StoreEvidence(ctx4, storeText, metadataJSON)
 				cancel4()
 				if storeErr != nil {
 					log.Printf("store evidence error (non-fatal): %v", storeErr)
+				} else if storedID != "" {
+					// Temporal edge formation: link to recent evidence IDs
+					for _, prevID := range recentEvidenceIDs {
+						graphStore.AddEdge(prevID, storedID, "temporal", 0.05)
+					}
+					if len(recentEvidenceIDs) > 0 {
+						log.Printf("[%s] graph: %d temporal edges formed", turnID, len(recentEvidenceIDs))
+					}
+
+					// Reflection edge formation: link retrieved evidence to new stored evidence
+					if len(evidenceRefs) > 0 {
+						for _, refID := range evidenceRefs {
+							graphStore.AddEdge(refID, storedID, "reflection", 0.3)
+						}
+						log.Printf("[%s] graph: %d reflection edges formed", turnID, len(evidenceRefs))
+					}
+
+					// Track recent evidence IDs (last 3)
+					recentEvidenceIDs = append(recentEvidenceIDs, storedID)
+					if len(recentEvidenceIDs) > 3 {
+						recentEvidenceIDs = recentEvidenceIDs[len(recentEvidenceIDs)-3:]
+					}
 				}
 			}
 		}

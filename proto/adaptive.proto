@@ -12,6 +12,7 @@ service CodecService {
   rpc StoreEvidence(StoreEvidenceRequest) returns (StoreEvidenceResponse);
   rpc WebSearch(WebSearchRequest) returns (WebSearchResponse);
   rpc DeleteEvidence(DeleteEvidenceRequest) returns (DeleteEvidenceResponse);
+  rpc GetByIDs(GetByIDsRequest) returns (GetByIDsResponse);
 }
 // #endregion service-definition
 
@@ -86,5 +87,13 @@ message DeleteEvidenceRequest {
 
 message DeleteEvidenceResponse {
   int32 deleted_count = 1;
+}
+
+message GetByIDsRequest {
+  repeated string ids = 1;
+}
+
+message GetByIDsResponse {
+  repeated SearchResult results = 1;
 }
 // #endregion messages

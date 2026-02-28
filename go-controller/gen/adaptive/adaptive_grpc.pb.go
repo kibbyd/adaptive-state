@@ -25,6 +25,7 @@ const (
 	CodecService_StoreEvidence_FullMethodName  = "/adaptive.CodecService/StoreEvidence"
 	CodecService_WebSearch_FullMethodName      = "/adaptive.CodecService/WebSearch"
 	CodecService_DeleteEvidence_FullMethodName = "/adaptive.CodecService/DeleteEvidence"
+	CodecService_GetByIDs_FullMethodName       = "/adaptive.CodecService/GetByIDs"
 )
 
 // CodecServiceClient is the client API for CodecService service.
@@ -39,6 +40,7 @@ type CodecServiceClient interface {
 	StoreEvidence(ctx context.Context, in *StoreEvidenceRequest, opts ...grpc.CallOption) (*StoreEvidenceResponse, error)
 	WebSearch(ctx context.Context, in *WebSearchRequest, opts ...grpc.CallOption) (*WebSearchResponse, error)
 	DeleteEvidence(ctx context.Context, in *DeleteEvidenceRequest, opts ...grpc.CallOption) (*DeleteEvidenceResponse, error)
+	GetByIDs(ctx context.Context, in *GetByIDsRequest, opts ...grpc.CallOption) (*GetByIDsResponse, error)
 }
 
 type codecServiceClient struct {
@@ -109,6 +111,16 @@ func (c *codecServiceClient) DeleteEvidence(ctx context.Context, in *DeleteEvide
 	return out, nil
 }
 
+func (c *codecServiceClient) GetByIDs(ctx context.Context, in *GetByIDsRequest, opts ...grpc.CallOption) (*GetByIDsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetByIDsResponse)
+	err := c.cc.Invoke(ctx, CodecService_GetByIDs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CodecServiceServer is the server API for CodecService service.
 // All implementations must embed UnimplementedCodecServiceServer
 // for forward compatibility.
@@ -121,6 +133,7 @@ type CodecServiceServer interface {
 	StoreEvidence(context.Context, *StoreEvidenceRequest) (*StoreEvidenceResponse, error)
 	WebSearch(context.Context, *WebSearchRequest) (*WebSearchResponse, error)
 	DeleteEvidence(context.Context, *DeleteEvidenceRequest) (*DeleteEvidenceResponse, error)
+	GetByIDs(context.Context, *GetByIDsRequest) (*GetByIDsResponse, error)
 	mustEmbedUnimplementedCodecServiceServer()
 }
 
@@ -148,6 +161,9 @@ func (UnimplementedCodecServiceServer) WebSearch(context.Context, *WebSearchRequ
 }
 func (UnimplementedCodecServiceServer) DeleteEvidence(context.Context, *DeleteEvidenceRequest) (*DeleteEvidenceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteEvidence not implemented")
+}
+func (UnimplementedCodecServiceServer) GetByIDs(context.Context, *GetByIDsRequest) (*GetByIDsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetByIDs not implemented")
 }
 func (UnimplementedCodecServiceServer) mustEmbedUnimplementedCodecServiceServer() {}
 func (UnimplementedCodecServiceServer) testEmbeddedByValue()                      {}
@@ -278,6 +294,24 @@ func _CodecService_DeleteEvidence_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CodecService_GetByIDs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetByIDsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CodecServiceServer).GetByIDs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CodecService_GetByIDs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CodecServiceServer).GetByIDs(ctx, req.(*GetByIDsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CodecService_ServiceDesc is the grpc.ServiceDesc for CodecService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -308,6 +342,10 @@ var CodecService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteEvidence",
 			Handler:    _CodecService_DeleteEvidence_Handler,
+		},
+		{
+			MethodName: "GetByIDs",
+			Handler:    _CodecService_GetByIDs_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

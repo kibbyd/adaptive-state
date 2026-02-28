@@ -159,6 +159,29 @@ func (c *CodecClient) DeleteEvidence(ctx context.Context, ids []string) (int, er
 }
 // #endregion delete-evidence
 
+// #region get-by-ids
+// GetByIDs fetches evidence items by their IDs via the Python service.
+func (c *CodecClient) GetByIDs(ctx context.Context, ids []string) ([]SearchResult, error) {
+	resp, err := c.client.GetByIDs(ctx, &pb.GetByIDsRequest{
+		Ids: ids,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get by ids rpc: %w", err)
+	}
+
+	results := make([]SearchResult, len(resp.Results))
+	for i, r := range resp.Results {
+		results[i] = SearchResult{
+			ID:           r.Id,
+			Text:         r.Text,
+			Score:        r.Score,
+			MetadataJSON: r.MetadataJson,
+		}
+	}
+	return results, nil
+}
+// #endregion get-by-ids
+
 // #region web-search
 // WebSearch queries the web via the Python DDGS service.
 func (c *CodecClient) WebSearch(ctx context.Context, query string, maxResults int) ([]WebSearchResult, error) {

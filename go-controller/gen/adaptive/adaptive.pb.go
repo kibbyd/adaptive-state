@@ -766,6 +766,94 @@ func (x *DeleteEvidenceResponse) GetDeletedCount() int32 {
 	return 0
 }
 
+type GetByIDsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ids           []string               `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetByIDsRequest) Reset() {
+	*x = GetByIDsRequest{}
+	mi := &file_adaptive_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetByIDsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetByIDsRequest) ProtoMessage() {}
+
+func (x *GetByIDsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetByIDsRequest.ProtoReflect.Descriptor instead.
+func (*GetByIDsRequest) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetByIDsRequest) GetIds() []string {
+	if x != nil {
+		return x.Ids
+	}
+	return nil
+}
+
+type GetByIDsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Results       []*SearchResult        `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetByIDsResponse) Reset() {
+	*x = GetByIDsResponse{}
+	mi := &file_adaptive_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetByIDsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetByIDsResponse) ProtoMessage() {}
+
+func (x *GetByIDsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_adaptive_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetByIDsResponse.ProtoReflect.Descriptor instead.
+func (*GetByIDsResponse) Descriptor() ([]byte, []int) {
+	return file_adaptive_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetByIDsResponse) GetResults() []*SearchResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
 var File_adaptive_proto protoreflect.FileDescriptor
 
 const file_adaptive_proto_rawDesc = "" +
@@ -816,14 +904,19 @@ const file_adaptive_proto_rawDesc = "" +
 	"\x15DeleteEvidenceRequest\x12\x10\n" +
 	"\x03ids\x18\x01 \x03(\tR\x03ids\"=\n" +
 	"\x16DeleteEvidenceResponse\x12#\n" +
-	"\rdeleted_count\x18\x01 \x01(\x05R\fdeletedCount2\xb5\x03\n" +
+	"\rdeleted_count\x18\x01 \x01(\x05R\fdeletedCount\"#\n" +
+	"\x0fGetByIDsRequest\x12\x10\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"D\n" +
+	"\x10GetByIDsResponse\x120\n" +
+	"\aresults\x18\x01 \x03(\v2\x16.adaptive.SearchResultR\aresults2\xf8\x03\n" +
 	"\fCodecService\x12A\n" +
 	"\bGenerate\x12\x19.adaptive.GenerateRequest\x1a\x1a.adaptive.GenerateResponse\x128\n" +
 	"\x05Embed\x12\x16.adaptive.EmbedRequest\x1a\x17.adaptive.EmbedResponse\x12;\n" +
 	"\x06Search\x12\x17.adaptive.SearchRequest\x1a\x18.adaptive.SearchResponse\x12P\n" +
 	"\rStoreEvidence\x12\x1e.adaptive.StoreEvidenceRequest\x1a\x1f.adaptive.StoreEvidenceResponse\x12D\n" +
 	"\tWebSearch\x12\x1a.adaptive.WebSearchRequest\x1a\x1b.adaptive.WebSearchResponse\x12S\n" +
-	"\x0eDeleteEvidence\x12\x1f.adaptive.DeleteEvidenceRequest\x1a .adaptive.DeleteEvidenceResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
+	"\x0eDeleteEvidence\x12\x1f.adaptive.DeleteEvidenceRequest\x1a .adaptive.DeleteEvidenceResponse\x12A\n" +
+	"\bGetByIDs\x12\x19.adaptive.GetByIDsRequest\x1a\x1a.adaptive.GetByIDsResponseBFZDgithub.com/danielpatrickdp/adaptive-state/go-controller/gen/adaptiveb\x06proto3"
 
 var (
 	file_adaptive_proto_rawDescOnce sync.Once
@@ -837,7 +930,7 @@ func file_adaptive_proto_rawDescGZIP() []byte {
 	return file_adaptive_proto_rawDescData
 }
 
-var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_adaptive_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_adaptive_proto_goTypes = []any{
 	(*GenerateRequest)(nil),        // 0: adaptive.GenerateRequest
 	(*GenerateResponse)(nil),       // 1: adaptive.GenerateResponse
@@ -853,27 +946,32 @@ var file_adaptive_proto_goTypes = []any{
 	(*WebSearchResponse)(nil),      // 11: adaptive.WebSearchResponse
 	(*DeleteEvidenceRequest)(nil),  // 12: adaptive.DeleteEvidenceRequest
 	(*DeleteEvidenceResponse)(nil), // 13: adaptive.DeleteEvidenceResponse
+	(*GetByIDsRequest)(nil),        // 14: adaptive.GetByIDsRequest
+	(*GetByIDsResponse)(nil),       // 15: adaptive.GetByIDsResponse
 }
 var file_adaptive_proto_depIdxs = []int32{
 	5,  // 0: adaptive.SearchResponse.results:type_name -> adaptive.SearchResult
 	10, // 1: adaptive.WebSearchResponse.results:type_name -> adaptive.WebSearchResult
-	0,  // 2: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
-	2,  // 3: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
-	4,  // 4: adaptive.CodecService.Search:input_type -> adaptive.SearchRequest
-	7,  // 5: adaptive.CodecService.StoreEvidence:input_type -> adaptive.StoreEvidenceRequest
-	9,  // 6: adaptive.CodecService.WebSearch:input_type -> adaptive.WebSearchRequest
-	12, // 7: adaptive.CodecService.DeleteEvidence:input_type -> adaptive.DeleteEvidenceRequest
-	1,  // 8: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
-	3,  // 9: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
-	6,  // 10: adaptive.CodecService.Search:output_type -> adaptive.SearchResponse
-	8,  // 11: adaptive.CodecService.StoreEvidence:output_type -> adaptive.StoreEvidenceResponse
-	11, // 12: adaptive.CodecService.WebSearch:output_type -> adaptive.WebSearchResponse
-	13, // 13: adaptive.CodecService.DeleteEvidence:output_type -> adaptive.DeleteEvidenceResponse
-	8,  // [8:14] is the sub-list for method output_type
-	2,  // [2:8] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	5,  // 2: adaptive.GetByIDsResponse.results:type_name -> adaptive.SearchResult
+	0,  // 3: adaptive.CodecService.Generate:input_type -> adaptive.GenerateRequest
+	2,  // 4: adaptive.CodecService.Embed:input_type -> adaptive.EmbedRequest
+	4,  // 5: adaptive.CodecService.Search:input_type -> adaptive.SearchRequest
+	7,  // 6: adaptive.CodecService.StoreEvidence:input_type -> adaptive.StoreEvidenceRequest
+	9,  // 7: adaptive.CodecService.WebSearch:input_type -> adaptive.WebSearchRequest
+	12, // 8: adaptive.CodecService.DeleteEvidence:input_type -> adaptive.DeleteEvidenceRequest
+	14, // 9: adaptive.CodecService.GetByIDs:input_type -> adaptive.GetByIDsRequest
+	1,  // 10: adaptive.CodecService.Generate:output_type -> adaptive.GenerateResponse
+	3,  // 11: adaptive.CodecService.Embed:output_type -> adaptive.EmbedResponse
+	6,  // 12: adaptive.CodecService.Search:output_type -> adaptive.SearchResponse
+	8,  // 13: adaptive.CodecService.StoreEvidence:output_type -> adaptive.StoreEvidenceResponse
+	11, // 14: adaptive.CodecService.WebSearch:output_type -> adaptive.WebSearchResponse
+	13, // 15: adaptive.CodecService.DeleteEvidence:output_type -> adaptive.DeleteEvidenceResponse
+	15, // 16: adaptive.CodecService.GetByIDs:output_type -> adaptive.GetByIDsResponse
+	10, // [10:17] is the sub-list for method output_type
+	3,  // [3:10] is the sub-list for method input_type
+	3,  // [3:3] is the sub-list for extension type_name
+	3,  // [3:3] is the sub-list for extension extendee
+	0,  // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_adaptive_proto_init() }
@@ -887,7 +985,7 @@ func file_adaptive_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_adaptive_proto_rawDesc), len(file_adaptive_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
