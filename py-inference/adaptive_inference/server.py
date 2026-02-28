@@ -141,6 +141,30 @@ class CodecServiceServicer(pb2_grpc.CodecServiceServicer):
             context.set_details(str(e))
             return pb2.DeleteEvidenceResponse()
 
+    def ListAllEvidence(self, request, context):
+        """Handle ListAllEvidence RPC — return all evidence items."""
+        logger.info("ListAllEvidence called")
+
+        try:
+            results = self._memory.list_all()
+            logger.info("ListAllEvidence returning %d items", len(results))
+            return pb2.ListAllEvidenceResponse(
+                results=[
+                    pb2.SearchResult(
+                        id=r.id,
+                        text=r.text,
+                        score=r.score,
+                        metadata_json=r.metadata_json,
+                    )
+                    for r in results
+                ]
+            )
+        except Exception as e:
+            logger.error("ListAllEvidence error: %s", e)
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(str(e))
+            return pb2.ListAllEvidenceResponse()
+
     def GetByIDs(self, request, context):
         """Handle GetByIDs RPC — fetch evidence items by their IDs."""
         logger.info("GetByIDs called: %d ids", len(request.ids))

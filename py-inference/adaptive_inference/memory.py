@@ -212,6 +212,23 @@ class MemoryStore:
 
         return selected
 
+    def list_all(self) -> list[SearchResult]:
+        """Return all evidence items in the collection."""
+        result = self._collection.get(include=["documents", "metadatas"])
+        if not result["ids"]:
+            return []
+
+        items = []
+        for i, doc_id in enumerate(result["ids"]):
+            meta = result["metadatas"][i] if result["metadatas"] else {}
+            items.append(SearchResult(
+                id=doc_id,
+                text=result["documents"][i] if result["documents"] else "",
+                score=0.0,
+                metadata_json=json.dumps(meta) if meta else "{}",
+            ))
+        return items
+
     def get_by_ids(self, ids: list[str]) -> list[SearchResult]:
         """Fetch evidence items by their IDs. Returns results in input order."""
         if not ids:

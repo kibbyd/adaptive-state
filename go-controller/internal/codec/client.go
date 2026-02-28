@@ -146,6 +146,27 @@ func (c *CodecClient) StoreEvidence(ctx context.Context, text string, metadataJS
 }
 // #endregion store-evidence
 
+// #region list-all-evidence
+// ListAllEvidence fetches all evidence items from the Python memory store.
+func (c *CodecClient) ListAllEvidence(ctx context.Context) ([]SearchResult, error) {
+	resp, err := c.client.ListAllEvidence(ctx, &pb.ListAllEvidenceRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("list all evidence rpc: %w", err)
+	}
+
+	results := make([]SearchResult, len(resp.Results))
+	for i, r := range resp.Results {
+		results[i] = SearchResult{
+			ID:           r.Id,
+			Text:         r.Text,
+			Score:        r.Score,
+			MetadataJSON: r.MetadataJson,
+		}
+	}
+	return results, nil
+}
+// #endregion list-all-evidence
+
 // #region delete-evidence
 // DeleteEvidence batch-deletes evidence items by ID via the Python service.
 func (c *CodecClient) DeleteEvidence(ctx context.Context, ids []string) (int, error) {

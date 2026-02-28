@@ -13,6 +13,7 @@ service CodecService {
   rpc WebSearch(WebSearchRequest) returns (WebSearchResponse);
   rpc DeleteEvidence(DeleteEvidenceRequest) returns (DeleteEvidenceResponse);
   rpc GetByIDs(GetByIDsRequest) returns (GetByIDsResponse);
+  rpc ListAllEvidence(ListAllEvidenceRequest) returns (ListAllEvidenceResponse);
 }
 // #endregion service-definition
 
@@ -94,6 +95,12 @@ message GetByIDsRequest {
 }
 
 message GetByIDsResponse {
+  repeated SearchResult results = 1;
+}
+
+message ListAllEvidenceRequest {}
+
+message ListAllEvidenceResponse {
   repeated SearchResult results = 1;
 }
 // #endregion messages
