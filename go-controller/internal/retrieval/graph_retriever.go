@@ -47,7 +47,7 @@ func (gr *GraphRetriever) Retrieve(ctx context.Context, prompt string, entropy f
 
 	// Walk from top result
 	entryID := baseResult.Retrieved[0].ID
-	walkResult, err := gr.graphStore.Walk(entryID, gr.maxDepth, gr.minWeight)
+	walkResult, err := gr.graphStore.Walk(entryID, gr.maxDepth, gr.minWeight, 10)
 	if err != nil {
 		log.Printf("graph walk error (non-fatal, using base): %v", err)
 		return baseResult, nil

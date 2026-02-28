@@ -117,7 +117,7 @@ func TestWalk(t *testing.T) {
 	// Add a branch: a -> e
 	gs.AddEdge("a", "e", "co_retrieval", 0.2)
 
-	result, err := gs.Walk("a", 5, 0.1)
+	result, err := gs.Walk("a", 5, 0.1, 100)
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestWalk(t *testing.T) {
 	}
 
 	// With minWeight 0.3, 'e' edge (0.2) should be filtered
-	result2, err := gs.Walk("a", 5, 0.3)
+	result2, err := gs.Walk("a", 5, 0.3, 100)
 	if err != nil {
 		t.Fatalf("walk filtered: %v", err)
 	}
@@ -142,13 +142,22 @@ func TestWalk(t *testing.T) {
 	}
 
 	// Depth limit
-	result3, err := gs.Walk("a", 1, 0.1)
+	result3, err := gs.Walk("a", 1, 0.1, 100)
 	if err != nil {
 		t.Fatalf("walk depth 1: %v", err)
 	}
 	// a + direct neighbors (b, e) = 3
 	if len(result3.IDs) != 3 {
 		t.Errorf("depth=1 should yield 3 nodes, got %d: %v", len(result3.IDs), result3.IDs)
+	}
+
+	// maxNodes cap
+	result4, err := gs.Walk("a", 5, 0.1, 3)
+	if err != nil {
+		t.Fatalf("walk maxNodes 3: %v", err)
+	}
+	if len(result4.IDs) != 3 {
+		t.Errorf("maxNodes=3 should yield 3 nodes, got %d: %v", len(result4.IDs), result4.IDs)
 	}
 }
 

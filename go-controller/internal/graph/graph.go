@@ -127,10 +127,13 @@ func (g *GraphStore) GetNeighbors(nodeID string, minWeight float64) ([]Edge, err
 
 // #region walk
 // Walk performs a BFS from entryID, following edges with weight >= minWeight,
-// up to maxDepth hops. Returns nodes in visit order with cumulative scores.
-func (g *GraphStore) Walk(entryID string, maxDepth int, minWeight float64) (WalkResult, error) {
+// up to maxDepth hops and maxNodes total. Returns nodes in visit order with cumulative scores.
+func (g *GraphStore) Walk(entryID string, maxDepth int, minWeight float64, maxNodes int) (WalkResult, error) {
 	if maxDepth <= 0 {
 		maxDepth = 5
+	}
+	if maxNodes <= 0 {
+		maxNodes = 10
 	}
 
 	result := WalkResult{
@@ -148,6 +151,10 @@ func (g *GraphStore) Walk(entryID string, maxDepth int, minWeight float64) (Walk
 	queue := []queueItem{{entryID, 0, 1.0}}
 
 	for len(queue) > 0 {
+		if len(result.IDs) >= maxNodes {
+			break
+		}
+
 		current := queue[0]
 		queue = queue[1:]
 
@@ -161,6 +168,9 @@ func (g *GraphStore) Walk(entryID string, maxDepth int, minWeight float64) (Walk
 		}
 
 		for _, edge := range neighbors {
+			if len(result.IDs) >= maxNodes {
+				break
+			}
 			if visited[edge.TargetID] {
 				continue
 			}

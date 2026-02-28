@@ -443,15 +443,20 @@ func main() {
 				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
 			}
 
-			// Co-retrieval edge formation: link evidence items retrieved together
-			if len(evidenceRefs) >= 2 {
-				for i := 0; i < len(evidenceRefs); i++ {
-					for j := i + 1; j < len(evidenceRefs); j++ {
-						graphStore.IncrementEdge(evidenceRefs[i], evidenceRefs[j], "co_retrieval", 0.1)
-						graphStore.IncrementEdge(evidenceRefs[j], evidenceRefs[i], "co_retrieval", 0.1)
+			// Co-retrieval edge formation: link top evidence items retrieved together
+			// Cap at 5 to prevent edge explosion from graph-walked results
+			coRetrievalRefs := evidenceRefs
+			if len(coRetrievalRefs) > 5 {
+				coRetrievalRefs = coRetrievalRefs[:5]
+			}
+			if len(coRetrievalRefs) >= 2 {
+				for i := 0; i < len(coRetrievalRefs); i++ {
+					for j := i + 1; j < len(coRetrievalRefs); j++ {
+						graphStore.IncrementEdge(coRetrievalRefs[i], coRetrievalRefs[j], "co_retrieval", 0.1)
+						graphStore.IncrementEdge(coRetrievalRefs[j], coRetrievalRefs[i], "co_retrieval", 0.1)
 					}
 				}
-				log.Printf("[%s] graph: %d co-retrieval edges formed", turnID, len(evidenceRefs)*(len(evidenceRefs)-1))
+				log.Printf("[%s] graph: %d co-retrieval edges formed", turnID, len(coRetrievalRefs)*(len(coRetrievalRefs)-1))
 			}
 			} // end command gate else
 
@@ -643,12 +648,17 @@ func main() {
 						log.Printf("[%s] graph: %d temporal edges formed", turnID, len(recentEvidenceIDs))
 					}
 
-					// Reflection edge formation: link retrieved evidence to new stored evidence
-					if len(evidenceRefs) > 0 {
-						for _, refID := range evidenceRefs {
+					// Reflection edge formation: link top retrieved evidence to new stored evidence
+					// Cap at 5 to match co-retrieval cap
+					reflectionRefs := evidenceRefs
+					if len(reflectionRefs) > 5 {
+						reflectionRefs = reflectionRefs[:5]
+					}
+					if len(reflectionRefs) > 0 {
+						for _, refID := range reflectionRefs {
 							graphStore.AddEdge(refID, storedID, "reflection", 0.3)
 						}
-						log.Printf("[%s] graph: %d reflection edges formed", turnID, len(evidenceRefs))
+						log.Printf("[%s] graph: %d reflection edges formed", turnID, len(reflectionRefs))
 					}
 
 					// Track recent evidence IDs (last 3)
