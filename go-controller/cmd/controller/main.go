@@ -505,6 +505,12 @@ func main() {
 			}
 			} // end command gate else
 
+			// Degeneration guard: truncate repetitive loops before output
+			if cleaned, wasTruncated := truncateRepetition(result.Text); wasTruncated {
+				log.Printf("[%s] repetition detected — truncated from %d to %d chars", turnID, len(result.Text), len(cleaned))
+				result.Text = cleaned
+			}
+
 			// Write encrypted response to outbox for Commander GUI
 			encrypted, encErr := cipher.Encrypt(result.Text)
 			if encErr != nil {
@@ -814,6 +820,95 @@ func parseDeleteIDs(response string, validIDs []string) []string {
 }
 
 // #endregion parse-delete-ids
+
+// #region dedup
+
+// truncateRepetition detects degenerate repetition loops in model output.
+// If 3+ sentences share the same structural prefix (first 6 words), the response
+// is truncated at the first repetition. Returns the cleaned text and whether
+// truncation occurred.
+func truncateRepetition(text string) (string, bool) {
+	// Split into sentences on ". " or ".\n"
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return text, false
+	}
+
+	// Normalize line breaks and split on sentence boundaries
+	var sentences []string
+	var current strings.Builder
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		current.WriteRune(runes[i])
+		if runes[i] == '.' || runes[i] == '!' || runes[i] == '?' {
+			// Check if next char is space, newline, or end
+			if i+1 >= len(runes) || runes[i+1] == ' ' || runes[i+1] == '\n' || runes[i+1] == '\r' {
+				s := strings.TrimSpace(current.String())
+				if s != "" {
+					sentences = append(sentences, s)
+				}
+				current.Reset()
+			}
+		}
+	}
+	// Capture trailing fragment
+	if s := strings.TrimSpace(current.String()); s != "" {
+		sentences = append(sentences, s)
+	}
+
+	if len(sentences) < 3 {
+		return text, false
+	}
+
+	// Extract structural prefix (first N words, lowercased) for each sentence
+	prefixCount := make(map[string]int)
+	prefixFirst := make(map[string]int) // index of first occurrence
+	for i, s := range sentences {
+		prefix := sentencePrefix(s, 6)
+		prefixCount[prefix]++
+		if _, exists := prefixFirst[prefix]; !exists {
+			prefixFirst[prefix] = i
+		}
+	}
+
+	// Find the first prefix that appears 3+ times
+	var loopPrefix string
+	loopStart := len(sentences)
+	for prefix, count := range prefixCount {
+		if count >= 3 {
+			first := prefixFirst[prefix]
+			if first < loopStart {
+				loopStart = first
+				loopPrefix = prefix
+			}
+		}
+	}
+
+	if loopPrefix == "" {
+		return text, false
+	}
+
+	// Keep sentences up to and including the first occurrence of the loop
+	// (the first one is usually legitimate, the repeats are degenerate)
+	var kept []string
+	for i := 0; i <= loopStart && i < len(sentences); i++ {
+		kept = append(kept, sentences[i])
+	}
+
+	result := strings.Join(kept, " ")
+	return result, true
+}
+
+// sentencePrefix returns the first n words of a sentence, lowercased.
+func sentencePrefix(s string, n int) string {
+	words := strings.Fields(strings.ToLower(s))
+	if len(words) > n {
+		words = words[:n]
+	}
+	return strings.Join(words, " ")
+}
+
+// #endregion dedup
 
 // #region helpers
 func envOr(key, fallback string) string {
