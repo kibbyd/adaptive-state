@@ -17,6 +17,7 @@ import (
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/gate"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/graph"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/interior"
+	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/orchestrator"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/logging"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/projection"
 	"github.com/danielpatrickdp/adaptive-state/go-controller/internal/retrieval"
@@ -103,6 +104,17 @@ func main() {
 	graphStore, err := graph.NewGraphStore(store.DB())
 	if err != nil {
 		log.Fatalf("failed to init graph store: %v", err)
+	}
+
+	// Initialize orchestrator — intelligent turn management with kill switch
+	orch, err := orchestrator.NewOrchestrator(store.DB())
+	if err != nil {
+		log.Fatalf("failed to init orchestrator: %v", err)
+	}
+	if orch.Enabled() {
+		log.Println("orchestrator: ENABLED (retry + strategy selection active)")
+	} else {
+		log.Println("orchestrator: DISABLED (pass-through mode, set ORCHESTRATOR_ENABLED=true to enable)")
 	}
 
 	// Connect to Python inference service
@@ -374,12 +386,17 @@ func main() {
 			log.Printf("[%s] interior state: reflection from %s injected", turnID, lastReflection.TurnID)
 		}
 
+		// Orchestrator: classify turn and select initial strategy
+		orchResult := orch.PreGenerate(prompt, lastReflection)
+		activeStrategy := orchResult.Strategy
+
 		// Variables that may be populated by generation or skipped for instruction-only prompts
 		var result codec.GenerateResult
 		var evidenceStrings []string
 		var evidenceRefs []string
 		var gateResult retrieval.GateResult
 		var curiosity []string
+		var orchAttempts []orchestrator.Attempt
 
 		if isPreferenceOnly {
 			// Instruction-only prompt: skip generation, provide canned acknowledgment
@@ -393,123 +410,173 @@ func main() {
 				Entropy: 0.0,
 			}
 		} else {
-			// Step 2: First-pass Generate to get entropy (rules always injected)
-			// On rule turns, use bare prompt — no state block to avoid identity/preference bleed
-			generatePrompt := wrappedPrompt
-			if len(matchedRules) > 0 {
-				generatePrompt = prompt
-			}
-			// Build first-pass evidence: cipher mode marker + interior state (skip rules in cipher mode)
-			var firstPassEvidence []string
-			if cipherMode {
-				firstPassEvidence = append([]string{"[CIPHER MODE]"}, interiorEvidence...)
-			} else {
-				firstPassEvidence = append(ruleEvidence, interiorEvidence...)
-			}
-			ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
-			result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, firstPassEvidence, nil)
-			cancel()
-			if err != nil {
-				log.Printf("codec error: %v", err)
-				continue
-			}
+			// === ORCHESTRATOR RETRY LOOP ===
+			// Wraps first-pass generate + retrieval + re-generate.
+			// Each iteration uses a different strategy if the previous response failed evaluation.
+			for attemptNum := 0; attemptNum < 3; attemptNum++ {
+				// Clear per-attempt state
+				evidenceStrings = nil
+				evidenceRefs = nil
 
-			// Step 3: Triple-gated retrieval with goals-adjusted threshold
-			// Command gate: skip retrieval for direct tool commands
-			if retrieval.IsDirectCommand(prompt) {
-				log.Printf("[%s] command gate: skipping retrieval for direct command", turnID)
-			} else {
-			retCfg := retrieval.DefaultConfig()
-			retCfg.SimilarityThreshold = retrieval.AdjustedThreshold(retCfg.SimilarityThreshold, goalsNorm)
-			adjustedRetriever := retrieval.NewRetriever(codecClient, retCfg)
-			graphRetriever := retrieval.NewGraphRetriever(adjustedRetriever, graphStore, codecClient)
-
-			ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
-			gateResult, err = graphRetriever.Retrieve(ctx2, prompt, result.Entropy)
-			cancel2()
-			if err != nil {
-				log.Printf("retrieval error (non-fatal): %v", err)
-			} else if len(gateResult.Retrieved) > 0 {
-				for _, ev := range gateResult.Retrieved {
-					evidenceStrings = append(evidenceStrings, ev.Text)
-					evidenceRefs = append(evidenceRefs, ev.ID)
+				// Apply strategy prompt modifier
+				generatePrompt := wrappedPrompt
+				if len(matchedRules) > 0 {
+					generatePrompt = prompt
 				}
-				log.Printf("[%s] retrieval: %s (adjusted_threshold=%.4f, goals_norm=%.4f)",
-					turnID, gateResult.Reason, retCfg.SimilarityThreshold, goalsNorm)
+				if activeStrategy.PromptModifier != "" && len(matchedRules) == 0 {
+					generatePrompt = activeStrategy.PromptModifier + generatePrompt
+				}
 
-				// Filter out evidence containing rule response patterns
-				// Matches both exact responses ("Daniel who?") and continuations ("Daniel who built...")
-				allRules, _ := ruleStore.List()
-				if len(allRules) > 0 {
-					var rulePatterns []string
-					for _, r := range allRules {
-						// Strip trailing punctuation to get the stem ("Daniel who?" → "daniel who")
-						stem := strings.ToLower(strings.TrimRight(r.Response, "?.!"))
-						if stem != "" {
-							rulePatterns = append(rulePatterns, stem)
-						}
+				// Build first-pass evidence respecting strategy config
+				var firstPassEvidence []string
+				if cipherMode {
+					firstPassEvidence = append(firstPassEvidence, "[CIPHER MODE]")
+				}
+				if activeStrategy.InjectInterior {
+					firstPassEvidence = append(firstPassEvidence, interiorEvidence...)
+				}
+				if activeStrategy.InjectRules && !cipherMode {
+					firstPassEvidence = append(firstPassEvidence, ruleEvidence...)
+				}
+
+				// Step 2: First-pass Generate
+				ctx, cancel := context.WithTimeout(context.Background(), timeoutGenerate)
+				result, err = codecClient.Generate(ctx, generatePrompt, current.StateVector, firstPassEvidence, nil)
+				cancel()
+				if err != nil {
+					log.Printf("codec error: %v", err)
+					break
+				}
+
+				// Step 3: Triple-gated retrieval with strategy-adjusted thresholds
+				// Only use command gate when classifier agrees it's a command (avoids "write me a poem" false positive)
+				isCommand := orchResult.Classification.Type == orchestrator.TurnCommand && retrieval.IsDirectCommand(prompt)
+				if isCommand || activeStrategy.MaxEvidence == 0 {
+					log.Printf("[%s] retrieval skipped (command gate or strategy=%s)", turnID, activeStrategy.ID)
+				} else {
+				retCfg := retrieval.DefaultConfig()
+				retCfg.SimilarityThreshold = activeStrategy.SimThreshold
+				retCfg.SimilarityThreshold = retrieval.AdjustedThreshold(retCfg.SimilarityThreshold, goalsNorm)
+				retCfg.TopK = activeStrategy.MaxEvidence
+				adjustedRetriever := retrieval.NewRetriever(codecClient, retCfg)
+				graphRetriever := retrieval.NewGraphRetriever(adjustedRetriever, graphStore, codecClient)
+
+				ctx2, cancel2 := context.WithTimeout(context.Background(), timeoutSearch)
+				gateResult, err = graphRetriever.Retrieve(ctx2, prompt, result.Entropy)
+				cancel2()
+				if err != nil {
+					log.Printf("retrieval error (non-fatal): %v", err)
+				} else if len(gateResult.Retrieved) > 0 {
+					for _, ev := range gateResult.Retrieved {
+						evidenceStrings = append(evidenceStrings, ev.Text)
+						evidenceRefs = append(evidenceRefs, ev.ID)
 					}
-					var filtered []string
-					for _, ev := range evidenceStrings {
-						evLower := strings.ToLower(ev)
-						contaminated := false
-						for _, pat := range rulePatterns {
-							if strings.Contains(evLower, pat) {
-								contaminated = true
-								break
+					// Enforce strategy MaxEvidence cap (graph walk may return more)
+					if len(evidenceStrings) > activeStrategy.MaxEvidence {
+						log.Printf("[%s] evidence capped: %d → %d (strategy=%s)",
+							turnID, len(evidenceStrings), activeStrategy.MaxEvidence, activeStrategy.ID)
+						evidenceStrings = evidenceStrings[:activeStrategy.MaxEvidence]
+						evidenceRefs = evidenceRefs[:activeStrategy.MaxEvidence]
+					}
+					log.Printf("[%s] retrieval: %s (threshold=%.4f, topk=%d, strategy=%s)",
+						turnID, gateResult.Reason, retCfg.SimilarityThreshold, retCfg.TopK, activeStrategy.ID)
+
+					// Filter out evidence containing rule response patterns
+					allRules, _ := ruleStore.List()
+					if len(allRules) > 0 {
+						var rulePatterns []string
+						for _, r := range allRules {
+							stem := strings.ToLower(strings.TrimRight(r.Response, "?.!"))
+							if stem != "" {
+								rulePatterns = append(rulePatterns, stem)
 							}
 						}
-						if !contaminated {
-							filtered = append(filtered, ev)
+						var filtered []string
+						for _, ev := range evidenceStrings {
+							evLower := strings.ToLower(ev)
+							contaminated := false
+							for _, pat := range rulePatterns {
+								if strings.Contains(evLower, pat) {
+									contaminated = true
+									break
+								}
+							}
+							if !contaminated {
+								filtered = append(filtered, ev)
+							}
+						}
+						if removed := len(evidenceStrings) - len(filtered); removed > 0 {
+							log.Printf("[%s] evidence filter: removed %d rule-contaminated items", turnID, removed)
+						}
+						evidenceStrings = filtered
+					}
+
+					// Re-generate with evidence injected
+					var allEvidence []string
+					if cipherMode {
+						allEvidence = append(allEvidence, "[CIPHER MODE]")
+					}
+					if activeStrategy.InjectInterior {
+						allEvidence = append(allEvidence, interiorEvidence...)
+					}
+					if activeStrategy.InjectRules && !cipherMode {
+						allEvidence = append(allEvidence, ruleEvidence...)
+					}
+					allEvidence = append(allEvidence, evidenceStrings...)
+					ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
+					result, err = codecClient.Generate(ctx3, generatePrompt, current.StateVector, allEvidence, nil)
+					cancel3()
+					if err != nil {
+						log.Printf("re-generate error: %v", err)
+						break
+					}
+				} else {
+					log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
+				}
+
+				// Co-retrieval edge formation
+				coRetrievalRefs := evidenceRefs
+				if len(coRetrievalRefs) > 5 {
+					coRetrievalRefs = coRetrievalRefs[:5]
+				}
+				if len(coRetrievalRefs) >= 2 {
+					for i := 0; i < len(coRetrievalRefs); i++ {
+						for j := i + 1; j < len(coRetrievalRefs); j++ {
+							graphStore.IncrementEdge(coRetrievalRefs[i], coRetrievalRefs[j], "co_retrieval", 0.1)
+							graphStore.IncrementEdge(coRetrievalRefs[j], coRetrievalRefs[i], "co_retrieval", 0.1)
 						}
 					}
-					if removed := len(evidenceStrings) - len(filtered); removed > 0 {
-						log.Printf("[%s] evidence filter: removed %d rule-contaminated items", turnID, removed)
-					}
-					evidenceStrings = filtered
+					log.Printf("[%s] graph: %d co-retrieval edges formed", turnID, len(coRetrievalRefs)*(len(coRetrievalRefs)-1))
+				}
+				} // end retrieval block
+
+				// Degeneration guard
+				wasTruncated := false
+				if cleaned, truncated := truncateRepetition(result.Text); truncated {
+					log.Printf("[%s] repetition detected — truncated from %d to %d chars", turnID, len(result.Text), len(cleaned))
+					result.Text = cleaned
+					wasTruncated = true
 				}
 
-				// Re-generate with evidence injected (cipher mode marker or rules, + interior state)
-				var allEvidence []string
-				if cipherMode {
-					allEvidence = append([]string{"[CIPHER MODE]"}, interiorEvidence...)
-					allEvidence = append(allEvidence, evidenceStrings...)
-				} else {
-					allEvidence = append(append(ruleEvidence, interiorEvidence...), evidenceStrings...)
-				}
-				ctx3, cancel3 := context.WithTimeout(context.Background(), timeoutGenerate)
-				result, err = codecClient.Generate(ctx3, generatePrompt, current.StateVector, allEvidence, nil)
-				cancel3()
-				if err != nil {
-					log.Printf("re-generate error: %v", err)
-					continue
-				}
-			} else {
-				log.Printf("[%s] retrieval: %s", turnID, gateResult.Reason)
-			}
+				// Orchestrator: evaluate response and decide retry
+				orchEval := orch.PostGenerate(prompt, result.Text, result.Entropy, orchResult.Classification, append(orchAttempts, orchestrator.Attempt{Strategy: activeStrategy.ID}), wasTruncated)
+				orchAttempts = append(orchAttempts, orchestrator.Attempt{
+					Strategy:   activeStrategy.ID,
+					Response:   result.Text,
+					Entropy:    result.Entropy,
+					Evaluation: orchEval.Evaluation,
+				})
 
-			// Co-retrieval edge formation: link top evidence items retrieved together
-			// Cap at 5 to prevent edge explosion from graph-walked results
-			coRetrievalRefs := evidenceRefs
-			if len(coRetrievalRefs) > 5 {
-				coRetrievalRefs = coRetrievalRefs[:5]
-			}
-			if len(coRetrievalRefs) >= 2 {
-				for i := 0; i < len(coRetrievalRefs); i++ {
-					for j := i + 1; j < len(coRetrievalRefs); j++ {
-						graphStore.IncrementEdge(coRetrievalRefs[i], coRetrievalRefs[j], "co_retrieval", 0.1)
-						graphStore.IncrementEdge(coRetrievalRefs[j], coRetrievalRefs[i], "co_retrieval", 0.1)
-					}
+				if orchEval.Accept || !orch.Enabled() {
+					break
 				}
-				log.Printf("[%s] graph: %d co-retrieval edges formed", turnID, len(coRetrievalRefs)*(len(coRetrievalRefs)-1))
+				if orchEval.NextStrategy == nil {
+					break
+				}
+				activeStrategy = *orchEval.NextStrategy
+				log.Printf("[%s] retry %d → strategy=%s", turnID, attemptNum+1, activeStrategy.ID)
 			}
-			} // end command gate else
-
-			// Degeneration guard: truncate repetitive loops before output
-			if cleaned, wasTruncated := truncateRepetition(result.Text); wasTruncated {
-				log.Printf("[%s] repetition detected — truncated from %d to %d chars", turnID, len(result.Text), len(cleaned))
-				result.Text = cleaned
-			}
+			// === END RETRY LOOP ===
 
 			// Write encrypted response to outbox for Commander GUI
 			encrypted, encErr := cipher.Encrypt(result.Text)
@@ -777,12 +844,19 @@ func main() {
 			log.Printf("logging error: %v", err)
 		}
 
+		// Orchestrator: record all attempts for this turn
+		acceptedIdx := len(orchAttempts) - 1
+		if acceptedIdx < 0 {
+			acceptedIdx = 0
+		}
+		orch.RecordFinalOutcome(turnID, orchResult.Classification, orchAttempts, acceptedIdx, gateDecision.SoftScore)
+
 		// Track previous turn for memory review context
 		lastPrompt = prompt
 		lastResponse = result.Text
 
-		fmt.Printf("[%s] decision=commit gate_score=%.4f entropy=%.4f evidence=%d\n",
-			turnID, gateDecision.SoftScore, result.Entropy, len(evidenceStrings))
+		fmt.Printf("[%s] decision=commit gate_score=%.4f entropy=%.4f evidence=%d strategy=%s attempts=%d\n",
+			turnID, gateDecision.SoftScore, result.Entropy, len(evidenceStrings), activeStrategy.ID, len(orchAttempts))
 	}
 }
 
