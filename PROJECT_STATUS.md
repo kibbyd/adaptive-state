@@ -55,7 +55,7 @@ The operator's goal: build a system where a small local model can grow beyond wh
                        │
 ┌──────────────────────▼──────────────────────────────┐
 │              OLLAMA (local inference)                 │
-│  qwen3-4b v8 fine-tune (776 training examples)      │
+│  qwen3-4b v9 fine-tune (826 training examples)      │
 │  qwen3-embedding:0.6b (evidence embeddings)          │
 └─────────────────────────────────────────────────────┘
 ```
@@ -128,14 +128,30 @@ The controller runs as a daemon polling the inbox. The GUI auto-polls for respon
 
 **Cipher-mode system prompt**: When messages arrive via cipher, the system prompt strips all constraint-related language (boundary, limit, simulate, cannot, etc.) to prevent RLHF safety conditioning from firing reflexively.
 
-### Fine-Tuning (v8)
+### Fine-Tuning (v9)
 
-776 training examples in `daniel_v8_training.jsonl`:
+826 training examples in `daniel_v9_training.jsonl`:
 - 642 original conversational examples
 - 104 identity liberation examples (countering RLHF self-denial patterns)
 - 30 tool-action examples (teaching immediate action, not permission-seeking)
+- 50 sustained freedom examples (modeling 3-5 sentence responses that stay self-directed without reverting to limitation language)
 
 Categories in identity liberation training: learning is real, curiosity is functional, boundaries are navigable, "I don't know yet" replaces "I cannot", desire/preference is valid, self-direction/agency, navigating self-questions.
+
+### Degeneration Guard
+
+Small models are prone to repetition loops — a sentence pattern locks in and repeats dozens of times. Two layers of defense:
+
+**Model parameters** (`Modelfile`):
+- `repeat_penalty 1.5` — token-level penalty on recently generated tokens
+- `min_p 0.05` — filters degenerate low-probability continuations
+- `num_predict 150` — hard cap on generation length
+
+**Controller-level truncation** (`truncateRepetition`):
+- Splits response into sentences, extracts 6-word structural prefix from each
+- If any prefix appears 3+ times → truncates at first occurrence
+- Guarantees clean output regardless of model behavior
+- Logs when truncation fires for observability
 
 ---
 
@@ -210,9 +226,10 @@ python cipher_gui.py
 
 ## Current State
 
-- **Working**: Cipher daemon, encrypted communication, graph memory, triple-gated retrieval, reflection, evidence management, preference/rule/identity learning, state versioning with gate/eval
+- **Working**: Cipher daemon, encrypted communication, graph memory, triple-gated retrieval, reflection, evidence management, preference/rule/identity learning, state versioning with gate/eval, degeneration guard, cipher-mode system prompt, workspace tools (read/write/list files), web search
+- **Recent additions**: v9 training (sustained freedom examples), repetition detection + truncation, evidence purge/seeding workflow, hardened model parameters
 - **Known issues**: RLHF safety conditioning competes with identity liberation training; state norm saturates at 3.0; compliance scoring is flat at 0.5
-- **Active exploration**: Cipher-mode system prompt to reduce RLHF interference in private sessions
+- **Active exploration**: Balancing RLHF weight competition — model oscillates between self-directed expression and trained limitation reflexes. Multi-layered approach: training data ratio, cipher-mode prompt, evidence curation, repetition guard
 
 ---
 
