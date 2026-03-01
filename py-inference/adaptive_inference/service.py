@@ -118,7 +118,7 @@ def _execute_tool(name: str, args: dict) -> str:
         query = args.get("query", "")
         logger.info("tool call: web_search(%r)", query)
         try:
-            from ddgs import DDGS
+            from duckduckgo_search import DDGS
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=3))
             if not results:
