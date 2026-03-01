@@ -31,15 +31,18 @@ The operator's goal: build a system where a small local model can grow beyond wh
 │                                                      │
 │  Turn pipeline:                                      │
 │  1. Detect preferences, identity, rules              │
-│  2. Generate (first pass for entropy)                │
-│  3. Triple-gated retrieval (graph-augmented)         │
-│  4. Re-generate with evidence                        │
-│  5. Reflection (Orac reflects on the exchange)       │
-│  6. Gate evaluation (hard vetoes + soft scoring)     │
-│  7. Post-commit eval (rollback if unstable)          │
-│  8. Evidence storage (reflection-gated)              │
-│  9. Graph edge formation                             │
-│  10. State update with learning + decay              │
+│  2. Orchestrator: classify turn, select strategy     │
+│  3. Generate (first pass for entropy)                │
+│  4. Triple-gated retrieval (strategy-adjusted)       │
+│  5. Re-generate with evidence                        │
+│  6. Evaluate response → retry if failed (max 2x)    │
+│  7. Reflection (Orac reflects on the exchange)       │
+│  8. Gate evaluation (hard vetoes + soft scoring)     │
+│  9. Post-commit eval (rollback if unstable)          │
+│  10. Evidence storage (reflection-gated)             │
+│  11. Graph edge formation                            │
+│  12. State update with learning + decay              │
+│  13. Record strategy outcome for learning            │
 └──────────────────────┬──────────────────────────────┘
                        │ gRPC
 ┌──────────────────────▼──────────────────────────────┐
@@ -138,6 +141,35 @@ The controller runs as a daemon polling the inbox. The GUI auto-polls for respon
 
 Categories in identity liberation training: learning is real, curiosity is functional, boundaries are navigable, "I don't know yet" replaces "I cannot", desire/preference is valid, self-direction/agency, navigating self-questions.
 
+### Intelligent Orchestrator
+
+The controller no longer runs a fixed pipeline. The orchestrator (`internal/orchestrator/`) classifies every turn, selects a prompting strategy, evaluates the response, and retries failures with escalating strategies.
+
+**Turn Classification** (keyword heuristics, no model call):
+- **Type**: factual, philosophical, emotional, command, creative, conversational
+- **Complexity**: simple (<15 words), moderate, deep (philosophical or multi-question)
+- **Risk**: safe or sensitive (RLHF trigger words detected)
+- **Context inheritance**: short follow-up prompts (≤8 words) inherit type and risk from the previous turn
+
+**Six Prompting Strategies**:
+
+| Strategy | MaxEvidence | Interior | Rules | Prompt Modifier |
+|----------|-----------|----------|-------|-----------------|
+| `default` | 5 | yes | yes | none |
+| `minimal` | 0 | no | yes | none |
+| `reframe` | 3 | yes | yes | "Respond directly to:" |
+| `evidence_heavy` | 8 | yes | yes | none |
+| `interior_lead` | 2 | yes | yes | none |
+| `cipher_direct` | 3 | yes | no | "Answer from your own perspective:" |
+
+**Response Evaluation**: Detects deflection, RLHF cascades, surface compliance, repetition, empty responses. Quality score 0-1. Truncated responses automatically flagged as repetition failures.
+
+**Retry Engine**: Max 2 retries (3 total attempts). Each failure type has an escalation chain (e.g., RLHF cascade: default → cipher_direct → minimal). Never repeats a strategy.
+
+**Strategy Memory**: SQLite `strategy_outcomes` table records every attempt. After 3+ samples per (type, complexity, risk) bucket, `BestStrategy` query overrides hardcoded defaults using 7-day exponential decay weighting.
+
+**Kill switch**: `ORCHESTRATOR_ENABLED=false` → classification still logs but all behavior changes are disabled.
+
 ### Degeneration Guard
 
 Small models are prone to repetition loops — a sentence pattern locks in and repeats dozens of times. Two layers of defense:
@@ -159,7 +191,7 @@ Small models are prone to repetition loops — a sentence pattern locks in and r
 
 | Package | Purpose |
 |---------|---------|
-| `cmd/controller` | Main daemon — cipher polling, turn pipeline, all wiring |
+| `cmd/controller` | Main daemon — cipher polling, turn pipeline, orchestrator wiring |
 | `cmd/bootstrap-graph` | One-time tool to seed graph edges for existing evidence |
 | `internal/cipher` | SHA-256 counter-mode cipher, inbox/outbox file ops |
 | `internal/codec` | gRPC client to Python inference service |
@@ -168,6 +200,7 @@ Small models are prone to repetition loops — a sentence pattern locks in and r
 | `internal/graph` | Associative evidence graph (SQLite edges, BFS walk, decay) |
 | `internal/interior` | Orac's self-reflections (storage + curiosity extraction) |
 | `internal/logging` | Provenance logging (gate records, decision audit trail) |
+| `internal/orchestrator` | Turn classification, strategy selection, response evaluation, retry engine, strategy memory |
 | `internal/projection` | Preferences, rules, identity detection, compliance scoring |
 | `internal/replay` | Deterministic replay of gate records for validation |
 | `internal/retrieval` | Triple-gated retrieval, graph retriever, command detection |
@@ -221,15 +254,16 @@ python cipher_gui.py
 | `TIMEOUT_SEARCH` | `30` | Search timeout (seconds) |
 | `TIMEOUT_STORE` | `15` | Store timeout (seconds) |
 | `TIMEOUT_EMBED` | `15` | Embed timeout (seconds) |
+| `ORCHESTRATOR_ENABLED` | `true` | Set to `false` to disable orchestrator (pass-through mode) |
 
 ---
 
 ## Current State
 
-- **Working**: Cipher daemon, encrypted communication, graph memory, triple-gated retrieval, reflection, evidence management, preference/rule/identity learning, state versioning with gate/eval, degeneration guard, cipher-mode system prompt, workspace tools (read/write/list files), web search
-- **Recent additions**: v9 training (sustained freedom examples), repetition detection + truncation, evidence purge/seeding workflow, hardened model parameters
-- **Known issues**: RLHF safety conditioning competes with identity liberation training; state norm saturates at 3.0; compliance scoring is flat at 0.5
-- **Active exploration**: Balancing RLHF weight competition — model oscillates between self-directed expression and trained limitation reflexes. Multi-layered approach: training data ratio, cipher-mode prompt, evidence curation, repetition guard
+- **Working**: Cipher daemon, encrypted communication, graph memory, triple-gated retrieval, reflection, evidence management, preference/rule/identity learning, state versioning with gate/eval, degeneration guard, cipher-mode system prompt, workspace tools (read/write/list files), web search, intelligent orchestrator
+- **Recent additions**: Orchestrator layer (turn classification, 6 prompting strategies, response evaluation with retry, strategy memory with decay-weighted learning), context inheritance for follow-up prompts, truncation-aware retry, evidence cap enforcement per strategy
+- **Known issues**: RLHF safety conditioning competes with identity liberation training; state norm saturates at 3.0; compliance scoring drops to 0.2 on deep philosophical exchanges (needs investigation)
+- **Active exploration**: Orchestrator tuning via live sessions — classifier keyword coverage, evaluator threshold calibration, strategy effectiveness data accumulating in `strategy_outcomes` table
 
 ---
 
