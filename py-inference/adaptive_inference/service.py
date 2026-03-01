@@ -77,7 +77,7 @@ _FACTUAL_QUESTION_WORDS = re.compile(
     r"\b(who|what|where|when|how much|how many|how long|how far|how old)\b", re.IGNORECASE
 )
 _FACTUAL_KEYWORDS = re.compile(
-    r"\b(phone|address|number|hours|time|price|cost|population|capital|zip code|weather|score|rate|salary|distance)\b",
+    r"\b(phone|address|number|hours|time|price|cost|population|capital|zip code|weather|score|rate|salary|distance|actor|actress|played|starred|directed|wrote|born|died|founded|invented|discovered|released|published)\b",
     re.IGNORECASE,
 )
 
@@ -118,7 +118,7 @@ def _execute_tool(name: str, args: dict) -> str:
         query = args.get("query", "")
         logger.info("tool call: web_search(%r)", query)
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             with DDGS() as ddgs:
                 results = list(ddgs.text(query, max_results=3))
             if not results:
