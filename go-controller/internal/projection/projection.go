@@ -513,9 +513,11 @@ func DetectMemoryCorrection(prompt string) bool {
 // #region style
 
 // conciseKeywords and detailedKeywords drive style inference.
+// NOTE: "direct" removed — too broad, matches "directness", "indirectness", "direction".
+// Use "be direct" instead for explicit instruction matching.
 var conciseKeywords = []string{
 	"short", "brief", "concise", "terse", "minimal", "no fluff",
-	"no filler", "direct", "to the point", "succinct",
+	"no filler", "be direct", "to the point", "succinct",
 }
 var detailedKeywords = []string{
 	"detailed", "verbose", "thorough", "explain in detail",
