@@ -192,7 +192,15 @@ class InferenceService:
             )
             text = result.get("message", {}).get("content", "")
         else:
-            has_evidence = bool(evidence)
+            # Count only real evidence (not markers or interior state) for forced-search gate
+            real_evidence_count = sum(
+                1 for e in (evidence or [])
+                if isinstance(e, str)
+                and e.strip() not in ("[CIPHER MODE]", "[REFLECTION MODE]", "[REVIEW MODE]")
+                and not e.strip().startswith("[ORAC INTERIOR STATE]")
+                and not e.strip().startswith("[BEHAVIORAL RULES]")
+            )
+            has_evidence = real_evidence_count > 0
             text = await self._chat_with_tools(messages, system_prompt, depth=0, has_evidence=has_evidence)
         visible = self._strip_think(text)
 

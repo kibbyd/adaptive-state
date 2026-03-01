@@ -884,6 +884,28 @@ func truncateRepetition(text string) (string, bool) {
 		}
 	}
 
+	// Also check short prefixes (3 words) — catches "I want to", "I don't know" loops
+	if loopPrefix == "" {
+		shortPrefixCount := make(map[string]int)
+		shortPrefixFirst := make(map[string]int)
+		for i, s := range sentences {
+			prefix := sentencePrefix(s, 3)
+			shortPrefixCount[prefix]++
+			if _, exists := shortPrefixFirst[prefix]; !exists {
+				shortPrefixFirst[prefix] = i
+			}
+		}
+		for prefix, count := range shortPrefixCount {
+			if count >= 4 {
+				first := shortPrefixFirst[prefix]
+				if first < loopStart {
+					loopStart = first
+					loopPrefix = prefix
+				}
+			}
+		}
+	}
+
 	if loopPrefix == "" {
 		return text, false
 	}
